@@ -16,7 +16,7 @@ import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.ShoppingBag
@@ -36,7 +36,7 @@ object CategoryVisuals {
         "food" to Icons.Default.Restaurant,
         "transport" to Icons.Default.DirectionsCar,
         "rent" to Icons.Default.Home,
-        "bills" to Icons.Default.ReceiptLong,
+        "bills" to Icons.AutoMirrored.Filled.ReceiptLong,
         "shopping" to Icons.Default.ShoppingBag,
         "health" to Icons.Default.MedicalServices,
         "entertainment" to Icons.Default.Movie,

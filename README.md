@@ -162,8 +162,35 @@ gradle :app:testDebugUnitTest
 
 ---
 
+## 📦 Automated Release APK via GitHub Actions
+
+SpendWise includes an automated CI workflow at `.github/workflows/release-apk.yml` that builds and packages a signed Release APK on every push to `main` or manually via **Run workflow** (`workflow_dispatch`).
+
+### Required GitHub Repository Secrets
+
+To sign the APK with your own production key:
+
+1. Generate your release keystore with alias `upload`:
+   ```bash
+   keytool -genkeypair -v -keystore my-upload-key.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+   ```
+2. Convert the keystore to a Base64 string:
+   ```bash
+   # Linux / macOS
+   base64 -w 0 my-upload-key.jks
+   ```
+3. In your GitHub repository, go to **Settings > Secrets and variables > Actions > New repository secret** and configure:
+   - `SIGNING_KEYSTORE_BASE64`: The Base64-encoded contents of `my-upload-key.jks`.
+   - `STORE_PASSWORD`: Keystore password.
+   - `KEY_PASSWORD`: Key password.
+
+> **Note on CI Fallback**: If secrets are not yet configured (e.g. initial repository setup or PR checks), the workflow automatically generates a temporary validation keystore with alias `upload` so the release build always finishes cleanly and produces a downloadable artifact (`SpendWise-Release-APK`).
+
+---
+
 ## 🔒 Privacy & Permissions
 
 SpendWise requires **NO runtime permissions** and **NO network permissions**:
 - `<uses-permission android:name="android.permission.INTERNET" />` is **NOT** declared.
 - File exports and backups use the Android **Storage Access Framework** and **FileProvider**, ensuring zero access to private external storage.
+

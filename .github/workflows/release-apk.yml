@@ -2,7 +2,6 @@ name: SpendWise Release APK
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
@@ -31,18 +30,41 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x gradlew
 
-      - name: Decode signing keystore
+      - name: Prepare environment files
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example .env || touch .env
+          fi
+
+      - name: Configure signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || 'android' }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD || 'android' }}
         run: |
           mkdir -p app
-          echo "$KEYSTORE_BASE64" | base64 --decode > app/release-key.jks
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding provided signing keystore from GitHub Secrets..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/release-key.jks
+          else
+            echo "::warning::SIGNING_KEYSTORE_BASE64 secret not found. Generating self-signed keystore for CI build validation..."
+            keytool -genkeypair -v \
+              -keystore app/release-key.jks \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "$STORE_PASS" \
+              -keypass "$KEY_PASS" \
+              -dname "CN=SpendWise, OU=Android, O=SpendWise, L=Bengaluru, S=KA, C=IN" \
+              -noprompt
+          fi
 
       - name: Build signed Release APK
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PATH: ${{ github.workspace }}/app/release-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
         run: ./gradlew assembleRelease
 
       - name: Upload Release APK
