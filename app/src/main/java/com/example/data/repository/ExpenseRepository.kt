@@ -275,7 +275,7 @@ class ExpenseRepository(
 
     suspend fun clearAllData() {
         expenseDao.deleteAllExpenses()
-        preferencesRepository.setSampleDataSeeded(false)
+        preferencesRepository.setSampleDataSeeded(true)
     }
 
     companion object {

@@ -101,10 +101,16 @@ object SampleDataSeeder {
         }
 
         val prefs = preferencesRepository.getPreferencesSync()
-        if (!prefs.isSampleDataSeeded) {
-            seedSampleExpenses(expenseDao)
-            preferencesRepository.setSampleDataSeeded(true)
+        if (prefs.isSampleDataSeeded) {
+            return
         }
+
+        // Only seed sample data if no expenses exist in the database, preventing accidental injection over user records
+        val existingExpensesCount = expenseDao.getExpensesCount()
+        if (existingExpensesCount == 0) {
+            seedSampleExpenses(expenseDao)
+        }
+        preferencesRepository.setSampleDataSeeded(true)
     }
 
     suspend fun seedSampleExpenses(expenseDao: ExpenseDao) {
