@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for SpendWise, a native Jetpack Compose and Room-based offline expense tracker featuring Emerald & Mint visual styling, interactive data visualization, SAF backup/restore, and CSV/XLSX reporting.",
+  "updatedAt":  "2026-10-31T07:39:09.496296998Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
