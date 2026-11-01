@@ -19,11 +19,12 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "sp
 data class UserPreferences(
     val currencySymbol: String = "₹",
     val themeMode: String = "SYSTEM",
-    val monthlyBudget: Double = 25000.0,
+    val monthlyBudget: Double = 0.0,
     val lastBackupTimestamp: Long = 0L,
     val isSampleDataSeeded: Boolean = false,
     val categoryBudgets: Map<String, Double> = emptyMap(),
-    val monthBudgets: Map<String, Double> = emptyMap()
+    val monthBudgets: Map<String, Double> = emptyMap(),
+    val isMonthlyLimitEnabled: Boolean = false
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -36,58 +37,75 @@ class UserPreferencesRepository(private val context: Context) {
         val IS_SAMPLE_DATA_SEEDED = booleanPreferencesKey("is_sample_data_seeded")
         val CATEGORY_BUDGETS_JSON = stringPreferencesKey("category_budgets_json")
         val MONTH_BUDGETS_JSON = stringPreferencesKey("month_budgets_json")
+        val IS_MONTHLY_LIMIT_ENABLED = booleanPreferencesKey("is_monthly_limit_enabled")
     }
 
-    val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
+    @Volatile
+    private var cachedPreferences: UserPreferences? = null
+
+    private fun mapPreferences(preferences: Preferences): UserPreferences {
         val catJson = preferences[PreferencesKeys.CATEGORY_BUDGETS_JSON] ?: "{}"
         val catMap = parseJsonToDoubleMap(catJson)
 
         val monthJson = preferences[PreferencesKeys.MONTH_BUDGETS_JSON] ?: "{}"
         val monthMap = parseJsonToDoubleMap(monthJson)
 
-        UserPreferences(
+        return UserPreferences(
             currencySymbol = preferences[PreferencesKeys.CURRENCY_SYMBOL] ?: "₹",
             themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "SYSTEM",
-            monthlyBudget = preferences[PreferencesKeys.MONTHLY_BUDGET] ?: 25000.0,
+            monthlyBudget = preferences[PreferencesKeys.MONTHLY_BUDGET] ?: 0.0,
             lastBackupTimestamp = preferences[PreferencesKeys.LAST_BACKUP_TIMESTAMP] ?: 0L,
             isSampleDataSeeded = preferences[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] ?: false,
             categoryBudgets = catMap,
-            monthBudgets = monthMap
+            monthBudgets = monthMap,
+            isMonthlyLimitEnabled = preferences[PreferencesKeys.IS_MONTHLY_LIMIT_ENABLED] ?: false
         )
     }
 
-    suspend fun getPreferencesSync(): UserPreferences = userPreferencesFlow.first()
+    val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
+        val mapped = mapPreferences(preferences)
+        cachedPreferences = mapped
+        mapped
+    }
+
+    suspend fun getPreferencesSync(): UserPreferences {
+        return cachedPreferences ?: userPreferencesFlow.first().also { cachedPreferences = it }
+    }
 
     suspend fun setCurrencySymbol(symbol: String) {
-        context.dataStore.edit { preferences ->
+        val updated = context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.CURRENCY_SYMBOL] = symbol
         }
+        cachedPreferences = mapPreferences(updated)
     }
 
     suspend fun setThemeMode(mode: String) {
-        context.dataStore.edit { preferences ->
+        val updated = context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.THEME_MODE] = mode
         }
+        cachedPreferences = mapPreferences(updated)
     }
 
     suspend fun setMonthlyBudget(budget: Double) {
-        context.dataStore.edit { preferences ->
+        val updated = context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.MONTHLY_BUDGET] = budget
         }
+        cachedPreferences = mapPreferences(updated)
     }
 
     suspend fun setMonthBudget(year: Int, month: Int, budget: Double) {
         val key = formatYearMonthKey(year, month)
-        context.dataStore.edit { preferences ->
+        val updated = context.dataStore.edit { preferences ->
             val currentJson = preferences[PreferencesKeys.MONTH_BUDGETS_JSON] ?: "{}"
             val map = parseJsonToDoubleMap(currentJson).toMutableMap()
             map[key] = budget
             preferences[PreferencesKeys.MONTH_BUDGETS_JSON] = mapToJson(map)
         }
+        cachedPreferences = mapPreferences(updated)
     }
 
     suspend fun setCategoryBudget(categoryId: String, budget: Double?) {
-        context.dataStore.edit { preferences ->
+        val updated = context.dataStore.edit { preferences ->
             val currentJson = preferences[PreferencesKeys.CATEGORY_BUDGETS_JSON] ?: "{}"
             val map = parseJsonToDoubleMap(currentJson).toMutableMap()
             if (budget == null || budget <= 0) {
@@ -97,22 +115,33 @@ class UserPreferencesRepository(private val context: Context) {
             }
             preferences[PreferencesKeys.CATEGORY_BUDGETS_JSON] = mapToJson(map)
         }
+        cachedPreferences = mapPreferences(updated)
     }
 
     suspend fun setLastBackupTimestamp(timestamp: Long) {
-        context.dataStore.edit { preferences ->
+        val updated = context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.LAST_BACKUP_TIMESTAMP] = timestamp
         }
+        cachedPreferences = mapPreferences(updated)
     }
 
     suspend fun setSampleDataSeeded(seeded: Boolean) {
-        context.dataStore.edit { preferences ->
+        val updated = context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] = seeded
         }
+        cachedPreferences = mapPreferences(updated)
+    }
+
+    suspend fun setMonthlyLimitEnabled(enabled: Boolean) {
+        val updated = context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.IS_MONTHLY_LIMIT_ENABLED] = enabled
+        }
+        cachedPreferences = mapPreferences(updated)
     }
 
     suspend fun clearSettings() {
-        context.dataStore.edit { it.clear() }
+        val updated = context.dataStore.edit { it.clear() }
+        cachedPreferences = mapPreferences(updated)
     }
 
     companion object {

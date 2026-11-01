@@ -93,14 +93,39 @@ class SettingsViewModel(
         }
     }
 
+    fun setMonthlyLimitEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setMonthlyLimitEnabled(enabled)
+            _eventFlow.emit(UiEvent.ShowSnackbar(if (enabled) "Monthly spending limit enabled" else "Monthly spending limit disabled"))
+        }
+    }
+
     fun isBackupOverdue(lastBackupTimestamp: Long): Boolean {
         if (lastBackupTimestamp <= 0L) return true
         val thirtyDaysMillis = 30L * 24 * 60 * 60 * 1000
         return (System.currentTimeMillis() - lastBackupTimestamp) > thirtyDaysMillis
     }
 
+    fun exportBackup(contentResolver: android.content.ContentResolver, uri: Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val outputStream = contentResolver.openOutputStream(uri)
+                    ?: throw java.io.IOException("Unable to open selected file for writing")
+                outputStream.use { stream ->
+                    backupRestoreManager.writeBackupToStream(stream)
+                }
+                _eventFlow.emit(UiEvent.ShowSnackbar("Backup created successfully"))
+            } catch (e: Exception) {
+                _eventFlow.emit(UiEvent.ShowSnackbar("Backup failed: ${e.localizedMessage ?: "Unknown error"}"))
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
     fun exportBackup(outputStream: OutputStream) {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isProcessing.value = true
             try {
                 backupRestoreManager.writeBackupToStream(outputStream)
@@ -113,8 +138,32 @@ class SettingsViewModel(
         }
     }
 
+    fun processRestoreFile(contentResolver: android.content.ContentResolver, uri: Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val inputStream = contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("Unable to open selected backup file")
+                val jsonString = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val result = backupRestoreManager.parseAndValidateBackup(jsonString)
+                result.fold(
+                    onSuccess = { (root, preview) ->
+                        _pendingRestore.value = Pair(root, preview)
+                    },
+                    onFailure = { error ->
+                        _eventFlow.emit(UiEvent.ShowSnackbar(error.localizedMessage ?: "Corrupt backup file"))
+                    }
+                )
+            } catch (e: Exception) {
+                _eventFlow.emit(UiEvent.ShowSnackbar("Cannot read backup: ${e.localizedMessage ?: "Error"}"))
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
     fun processRestoreFile(inputStream: InputStream) {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isProcessing.value = true
             try {
                 val result = backupRestoreManager.parseAndValidateBackup(inputStream)
@@ -138,7 +187,7 @@ class SettingsViewModel(
 
     fun executeRestore(replaceAll: Boolean) {
         val pending = _pendingRestore.value ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isProcessing.value = true
             try {
                 val result = backupRestoreManager.restoreData(pending.first, replaceAll)
@@ -161,6 +210,52 @@ class SettingsViewModel(
         }
     }
 
+    fun exportReportToUri(
+        contentResolver: android.content.ContentResolver,
+        uri: Uri,
+        scope: ExportScope,
+        format: ExportFormat,
+        customStartMillis: Long,
+        customEndMillis: Long
+    ) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val now = Calendar.getInstance()
+                val currentYear = now.get(Calendar.YEAR)
+                val currentMonth = now.get(Calendar.MONTH) + 1
+                val expenses = reportExporter.fetchExpensesForScope(
+                    scope = scope,
+                    year = currentYear,
+                    month = currentMonth,
+                    customStartMillis = customStartMillis,
+                    customEndMillis = customEndMillis
+                )
+
+                if (expenses.isEmpty()) {
+                    _eventFlow.emit(UiEvent.ShowSnackbar("No expenses found in selected range to export"))
+                    return@launch
+                }
+
+                val outputStream = contentResolver.openOutputStream(uri)
+                    ?: throw java.io.IOException("Unable to open target file for writing")
+                outputStream.use { stream ->
+                    reportExporter.exportToStream(
+                        format = format,
+                        expenses = expenses,
+                        currencySymbol = userPreferences.value.currencySymbol,
+                        outputStream = stream
+                    )
+                }
+                _eventFlow.emit(UiEvent.ShowSnackbar("Report exported successfully"))
+            } catch (e: Exception) {
+                _eventFlow.emit(UiEvent.ShowSnackbar("Export failed: ${e.localizedMessage ?: "Error"}"))
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
     fun exportReportToStream(
         scope: ExportScope,
         format: ExportFormat,
@@ -168,7 +263,7 @@ class SettingsViewModel(
         customEndMillis: Long,
         outputStream: OutputStream
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isProcessing.value = true
             try {
                 val now = Calendar.getInstance()
@@ -249,6 +344,25 @@ class SettingsViewModel(
             try {
                 expenseRepository.reSeedSampleData()
                 _eventFlow.emit(UiEvent.ShowSnackbar("Sample expenses loaded"))
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    suspend fun countExpensesInRange(startMillis: Long, endMillis: Long): Int {
+        return expenseRepository.countExpensesInRange(startMillis, endMillis)
+    }
+
+    fun clearExpensesInRange(startMillis: Long, endMillis: Long, onComplete: ((Int) -> Unit)? = null) {
+        viewModelScope.launch {
+            _isProcessing.value = true
+            try {
+                val deletedCount = expenseRepository.clearExpensesInRange(startMillis, endMillis)
+                onComplete?.invoke(deletedCount)
+                _eventFlow.emit(UiEvent.ShowSnackbar("Cleared $deletedCount expense${if (deletedCount == 1) "" else "s"} in selected range"))
+            } catch (e: Exception) {
+                _eventFlow.emit(UiEvent.ShowSnackbar("Failed to clear expenses: ${e.localizedMessage ?: "Error"}"))
             } finally {
                 _isProcessing.value = false
             }

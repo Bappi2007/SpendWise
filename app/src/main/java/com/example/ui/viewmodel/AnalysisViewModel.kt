@@ -100,6 +100,12 @@ class AnalysisViewModel(
             repository.setCategoryBudget(categoryId, budget)
         }
     }
+
+    fun setMonthlyLimitEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setMonthlyLimitEnabled(enabled)
+        }
+    }
 }
 
 class AnalysisViewModelFactory(

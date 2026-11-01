@@ -2,17 +2,24 @@ package com.example.data.repository
 
 import com.example.data.dao.CategoryDao
 import com.example.data.dao.ExpenseDao
+import com.example.data.dao.ExpenseSplitDao
+import com.example.data.dao.FriendDao
+import com.example.data.dao.FundDao
 import com.example.data.model.CategoryEntity
 import com.example.data.model.CategorySpending
 import com.example.data.model.DailySpending
 import com.example.data.model.ExpenseEntity
+import com.example.data.model.ExpenseSplitEntity
 import com.example.data.model.ExpenseWithCategory
+import com.example.data.model.FriendEntity
+import com.example.data.model.FundEntity
 import com.example.data.model.MonthSummary
 import com.example.data.model.MonthlyTrend
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.seeder.SampleDataSeeder
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -20,7 +27,10 @@ import java.util.Locale
 class ExpenseRepository(
     private val expenseDao: ExpenseDao,
     private val categoryDao: CategoryDao,
-    private val preferencesRepository: UserPreferencesRepository
+    private val preferencesRepository: UserPreferencesRepository,
+    private val expenseSplitDao: ExpenseSplitDao? = null,
+    private val friendDao: FriendDao? = null,
+    private val fundDao: FundDao? = null
 ) {
 
     val allExpensesWithCategory: Flow<List<ExpenseWithCategory>> =
@@ -31,6 +41,21 @@ class ExpenseRepository(
 
     val userPreferences: Flow<UserPreferences> =
         preferencesRepository.userPreferencesFlow
+
+    val allSplits: Flow<List<ExpenseSplitEntity>> =
+        expenseSplitDao?.getAllSplits() ?: emptyFlow()
+
+    val pendingSplits: Flow<List<ExpenseSplitEntity>> =
+        expenseSplitDao?.getPendingSplits() ?: emptyFlow()
+
+    val allFriends: Flow<List<FriendEntity>> =
+        friendDao?.getAllFriends() ?: emptyFlow()
+
+    val allFunds: Flow<List<FundEntity>> =
+        fundDao?.getAllFunds() ?: emptyFlow()
+
+    val totalFundsAmount: Flow<Double> =
+        fundDao?.getTotalFundsAmount() ?: emptyFlow()
 
     fun getExpensesForDateRange(startTimestamp: Long, endTimestamp: Long): Flow<List<ExpenseWithCategory>> =
         expenseDao.getExpensesByRange(startTimestamp, endTimestamp)
@@ -44,7 +69,7 @@ class ExpenseRepository(
     suspend fun getAllCategoriesSync(): List<CategoryEntity> =
         categoryDao.getAllCategoriesSync()
 
-    suspend fun insertExpense(expense: ExpenseEntity) =
+    suspend fun insertExpense(expense: ExpenseEntity): Long =
         expenseDao.insertExpense(expense)
 
     suspend fun updateExpense(expense: ExpenseEntity) =
@@ -62,11 +87,29 @@ class ExpenseRepository(
     suspend fun updateCategory(category: CategoryEntity) =
         categoryDao.updateCategory(category)
 
+    suspend fun saveExpenseWithSplits(expense: ExpenseEntity, splits: List<ExpenseSplitEntity>) {
+        expenseDao.insertExpense(expense)
+        if (expenseSplitDao != null) {
+            expenseSplitDao.deleteSplitsForExpense(expense.id)
+            if (splits.isNotEmpty()) {
+                val preparedSplits = splits.map { it.copy(expenseId = expense.id) }
+                expenseSplitDao.insertSplits(preparedSplits)
+            }
+        }
+    }
+
+    suspend fun setSplitPaidStatus(splitId: String, isPaid: Boolean) {
+        val settledTime = if (isPaid) System.currentTimeMillis() else null
+        expenseSplitDao?.setPaidStatus(splitId, isPaid, settledTime)
+    }
+
+    suspend fun getSplitsForExpense(expenseId: String): List<ExpenseSplitEntity> =
+        expenseSplitDao?.getSplitsForExpenseSync(expenseId) ?: emptyList()
+
     /**
      * Requirement 3: Deleting a category moves its expenses to "Other"
      */
     suspend fun deleteCategory(category: CategoryEntity) {
-        // Ensure Other category exists
         val otherCategory = categoryDao.getCategoryById(SampleDataSeeder.DEFAULT_CATEGORY_OTHER_ID)
             ?: categoryDao.getCategoryByName("Other")
             ?: run {
@@ -82,23 +125,21 @@ class ExpenseRepository(
                 fallbackOther
             }
 
-        // Reassign all expenses belonging to this category to Other
         categoryDao.reassignExpenses(category.id, otherCategory.id)
         categoryDao.deleteCategory(category)
     }
 
     suspend fun calculateMonthSummary(
         year: Int,
-        month: Int, // 1-based: 1 for January, 12 for December
+        month: Int,
         monthlyBudget: Double
     ): MonthSummary {
         val (startCurrent, endCurrent) = getMonthBounds(year, month)
         val currentExpenses = expenseDao.getExpensesByRangeSync(startCurrent, endCurrent)
 
-        // Previous month bounds
         val prevCal = Calendar.getInstance().apply {
             set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month - 1) // 0-based
+            set(Calendar.MONTH, month - 1)
             add(Calendar.MONTH, -1)
         }
         val prevYear = prevCal.get(Calendar.YEAR)
@@ -109,9 +150,9 @@ class ExpenseRepository(
         val totalSpent = currentExpenses.sumOf { it.expense.amount }
         val previousMonthTotal = prevExpenses.sumOf { it.expense.amount }
 
-        val percentageChange: Double? = if (previousMonthTotal > 0.0) {
+        val percentageChange = if (previousMonthTotal > 0) {
             ((totalSpent - previousMonthTotal) / previousMonthTotal) * 100.0
-        } else if (totalSpent > 0.0) {
+        } else if (totalSpent > 0) {
             100.0
         } else {
             0.0
@@ -120,85 +161,79 @@ class ExpenseRepository(
         val daysInMonth = getDaysInMonth(year, month)
         val dailyAverage = if (daysInMonth > 0) totalSpent / daysInMonth else 0.0
 
-        // Daily breakdowns
-        val dayExpensesMap = currentExpenses.groupBy {
-            val cal = Calendar.getInstance().apply { timeInMillis = it.expense.timestamp }
-            cal.get(Calendar.DAY_OF_MONTH)
+        val expensesByDay = currentExpenses.groupBy {
+            val c = Calendar.getInstance().apply { timeInMillis = it.expense.timestamp }
+            c.get(Calendar.DAY_OF_MONTH)
         }
 
         var maxSpendDayEpoch: Long? = null
         var maxSpendDayAmount = 0.0
 
         val dailyList = mutableListOf<DailySpending>()
-        val calDay = Calendar.getInstance().apply {
-            set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month - 1)
-        }
-
         for (day in 1..daysInMonth) {
-            calDay.set(Calendar.DAY_OF_MONTH, day)
-            calDay.set(Calendar.HOUR_OF_DAY, 12)
-            val dayEpoch = calDay.timeInMillis
-            val dayOfWeek = calDay.get(Calendar.DAY_OF_WEEK)
-            val isWeekend = (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)
-
-            val dayExpenses = dayExpensesMap[day] ?: emptyList()
+            val dayExpenses = expensesByDay[day] ?: emptyList()
             val dayTotal = dayExpenses.sumOf { it.expense.amount }
-            if (dayTotal > maxSpendDayAmount) {
-                maxSpendDayAmount = dayTotal
-                maxSpendDayEpoch = dayEpoch
+
+            val dayCal = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month - 1)
+                set(Calendar.DAY_OF_MONTH, day)
+                set(Calendar.HOUR_OF_DAY, 12)
             }
 
+            val isWeekend = dayCal.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY || dayCal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
             dailyList.add(
                 DailySpending(
                     dayOfMonth = day,
-                    dateEpochMillis = dayEpoch,
+                    dateEpochMillis = dayCal.timeInMillis,
                     totalAmount = dayTotal,
                     transactionCount = dayExpenses.size,
                     isWeekend = isWeekend
                 )
             )
+
+            if (dayTotal > maxSpendDayAmount) {
+                maxSpendDayAmount = dayTotal
+                maxSpendDayEpoch = dayCal.timeInMillis
+            }
         }
 
-        // Category breakdown
-        val categoryMap = currentExpenses.groupBy { it.categoryName }
-        val allCategories = categoryDao.getAllCategoriesSync().associateBy { it.name }
-
+        val allCategories = categoryDao.getAllCategoriesSync().associateBy { it.id }
+        val expensesByCategory = currentExpenses.groupBy { it.expense.categoryId }
         val prefs = preferencesRepository.getPreferencesSync()
-        val monthKey = UserPreferencesRepository.formatYearMonthKey(year, month)
-        val isMonthSpecific = prefs.monthBudgets.containsKey(monthKey)
-        val effectiveBudget = prefs.monthBudgets[monthKey] ?: if (monthlyBudget > 0) monthlyBudget else prefs.monthlyBudget
+        val categoryBudgets = prefs.categoryBudgets
 
-        val categoryBreakdowns = categoryMap.map { (catName, items) ->
-            val catTotal = items.sumOf { it.expense.amount }
-            val catEntity = allCategories[catName] ?: items.firstOrNull()?.category
-            val catId = catEntity?.id ?: catName
-            val colorHex = catEntity?.colorHex ?: 0xFF64748B
-            val iconKey = catEntity?.iconKey ?: "other"
-            val pct = if (totalSpent > 0) ((catTotal / totalSpent) * 100).toFloat() else 0f
-            val catBudget = prefs.categoryBudgets[catId]
-            val catProgress = if (catBudget != null && catBudget > 0) (catTotal / catBudget).toFloat() else null
-
+        val categoryBreakdowns = expensesByCategory.map { (catId, exps) ->
+            val catTotal = exps.sumOf { it.expense.amount }
+            val catEntity = allCategories[catId]
+            val catPercentage = if (totalSpent > 0) ((catTotal / totalSpent) * 100.0).toFloat() else 0f
+            val catLimit = categoryBudgets[catId]
+            val catProgress = if (catLimit != null && catLimit > 0) (catTotal / catLimit).toFloat() else null
             CategorySpending(
                 categoryId = catId,
-                categoryName = catName,
-                colorHex = colorHex,
-                iconKey = iconKey,
+                categoryName = catEntity?.name ?: "Other",
+                colorHex = catEntity?.colorHex ?: 0xFF64748B,
+                iconKey = catEntity?.iconKey ?: "other",
                 totalAmount = catTotal,
-                percentage = pct,
-                transactionCount = items.size,
-                budgetLimit = catBudget,
+                percentage = catPercentage,
+                transactionCount = exps.size,
+                budgetLimit = catLimit,
                 budgetProgress = catProgress
             )
         }.sortedByDescending { it.totalAmount }
 
-        // Last 6 months trend
+        val monthBudgetKey = com.example.data.preferences.UserPreferencesRepository.formatYearMonthKey(year, month)
+        val monthBudgets = prefs.monthBudgets
+        val specificMonthBudget = monthBudgets[monthBudgetKey]
+        val effectiveBudget = specificMonthBudget ?: monthlyBudget
+        val isMonthSpecific = specificMonthBudget != null
+
         val monthlyTrends = mutableListOf<MonthlyTrend>()
         val trendCal = Calendar.getInstance().apply {
             set(Calendar.YEAR, year)
             set(Calendar.MONTH, month - 1)
             set(Calendar.DAY_OF_MONTH, 1)
-            add(Calendar.MONTH, -5) // Go back 5 months to include current month = 6 total
+            add(Calendar.MONTH, -5)
         }
 
         val monthLabelFormat = SimpleDateFormat("MMM", Locale.getDefault())
@@ -263,19 +298,83 @@ class ExpenseRepository(
         preferencesRepository.setMonthBudget(year, month, budget)
     }
 
+    suspend fun setMonthlyLimitEnabled(enabled: Boolean) {
+        preferencesRepository.setMonthlyLimitEnabled(enabled)
+    }
+
     suspend fun setCategoryBudget(categoryId: String, budget: Double?) {
         preferencesRepository.setCategoryBudget(categoryId, budget)
     }
 
     suspend fun reSeedSampleData() {
+        expenseSplitDao?.deleteAllSplits()
         expenseDao.deleteAllExpenses()
-        SampleDataSeeder.seedSampleExpenses(expenseDao)
+        SampleDataSeeder.seedSampleExpenses(expenseDao, expenseSplitDao)
         preferencesRepository.setSampleDataSeeded(true)
     }
 
     suspend fun clearAllData() {
+        expenseSplitDao?.deleteAllSplits()
         expenseDao.deleteAllExpenses()
+        fundDao?.deleteAllFunds()
+        preferencesRepository.setMonthlyBudget(0.0)
         preferencesRepository.setSampleDataSeeded(true)
+    }
+
+    suspend fun clearExpensesInRange(startTime: Long, endTime: Long): Int {
+        return expenseDao.deleteExpensesInRange(startTime, endTime)
+    }
+
+    suspend fun countExpensesInRange(startTime: Long, endTime: Long): Int {
+        return expenseDao.countExpensesInRange(startTime, endTime)
+    }
+
+    suspend fun insertFriend(name: String): FriendEntity {
+        val friend = FriendEntity(name = name.trim())
+        friendDao?.insertFriend(friend)
+        return friend
+    }
+
+    suspend fun deleteFriend(friend: FriendEntity) {
+        friendDao?.deleteFriend(friend)
+    }
+
+    suspend fun deleteFriendById(id: String) {
+        friendDao?.deleteFriendById(id)
+    }
+
+    suspend fun getAllFriendsSync(): List<FriendEntity> {
+        return friendDao?.getAllFriendsSync() ?: emptyList()
+    }
+
+    suspend fun insertFund(
+        title: String,
+        amount: Double,
+        source: String,
+        timestamp: Long = System.currentTimeMillis(),
+        notes: String? = null
+    ): FundEntity {
+        val fund = FundEntity(
+            title = title.trim(),
+            amount = amount,
+            source = source.trim(),
+            timestamp = timestamp,
+            notes = notes?.trim()
+        )
+        fundDao?.insertFund(fund)
+        return fund
+    }
+
+    suspend fun deleteFund(fund: FundEntity) {
+        fundDao?.deleteFund(fund)
+    }
+
+    suspend fun deleteFundById(id: String) {
+        fundDao?.deleteFundById(id)
+    }
+
+    suspend fun getAllFundsSync(): List<FundEntity> {
+        return fundDao?.getAllFundsSync() ?: emptyList()
     }
 
     companion object {

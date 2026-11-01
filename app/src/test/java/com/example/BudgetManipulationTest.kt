@@ -68,4 +68,23 @@ class BudgetManipulationTest {
         assertEquals("2026-10", key1)
         assertEquals("2026-05", key2)
     }
+
+    @Test
+    fun `monthly limit toggle flag enables and disables limit mode in HomeSummary`() {
+        val summaryDisabled = com.example.ui.viewmodel.ExpenseViewModel.calculateHomeSummary(
+            list = emptyList(),
+            budget = 20000.0,
+            funds = emptyList(),
+            isMonthlyLimitEnabled = false
+        )
+        org.junit.Assert.assertFalse("Limit must be disabled", summaryDisabled.isMonthlyLimitEnabled)
+
+        val summaryEnabled = com.example.ui.viewmodel.ExpenseViewModel.calculateHomeSummary(
+            list = emptyList(),
+            budget = 20000.0,
+            funds = emptyList(),
+            isMonthlyLimitEnabled = true
+        )
+        assertTrue("Limit must be enabled", summaryEnabled.isMonthlyLimitEnabled)
+    }
 }

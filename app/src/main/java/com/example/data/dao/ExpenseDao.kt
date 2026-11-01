@@ -60,4 +60,11 @@ interface ExpenseDao {
 
     @Query("SELECT COALESCE(SUM(amount), 0.0) FROM expenses WHERE timestamp >= :startMillis AND timestamp <= :endMillis")
     suspend fun getTotalSpentInRange(startMillis: Long, endMillis: Long): Double
+
+    @Query("DELETE FROM expenses WHERE timestamp >= :startMillis AND timestamp <= :endMillis")
+    suspend fun deleteExpensesInRange(startMillis: Long, endMillis: Long): Int
+
+    @Query("SELECT COUNT(*) FROM expenses WHERE timestamp >= :startMillis AND timestamp <= :endMillis")
+    suspend fun countExpensesInRange(startMillis: Long, endMillis: Long): Int
 }
+

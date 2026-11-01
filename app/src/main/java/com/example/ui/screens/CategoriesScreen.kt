@@ -79,8 +79,8 @@ fun CategoriesScreen(
                     categoryToEdit = null
                     isAddDialogOpen = true
                 },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                containerColor = MaterialTheme.colorScheme.tertiary,
+                contentColor = MaterialTheme.colorScheme.onTertiary,
                 modifier = Modifier.testTag("add_category_fab")
             ) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = "Add Category")

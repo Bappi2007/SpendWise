@@ -33,7 +33,10 @@ class DefaultAppContainer(private val application: Application) : AppContainer {
         ExpenseRepository(
             expenseDao = database.expenseDao(),
             categoryDao = database.categoryDao(),
-            preferencesRepository = preferencesRepository
+            preferencesRepository = preferencesRepository,
+            expenseSplitDao = database.expenseSplitDao(),
+            friendDao = database.friendDao(),
+            fundDao = database.fundDao()
         )
     }
 
@@ -41,7 +44,8 @@ class DefaultAppContainer(private val application: Application) : AppContainer {
         BackupRestoreManager(
             categoryDao = database.categoryDao(),
             expenseDao = database.expenseDao(),
-            preferencesRepository = preferencesRepository
+            preferencesRepository = preferencesRepository,
+            expenseSplitDao = database.expenseSplitDao()
         )
     }
 
@@ -69,7 +73,8 @@ class SpendWiseApplication : Application() {
             SampleDataSeeder.seedInitialDataIfNeeded(
                 categoryDao = container.database.categoryDao(),
                 expenseDao = container.database.expenseDao(),
-                preferencesRepository = container.preferencesRepository
+                preferencesRepository = container.preferencesRepository,
+                expenseSplitDao = container.database.expenseSplitDao()
             )
         }
     }

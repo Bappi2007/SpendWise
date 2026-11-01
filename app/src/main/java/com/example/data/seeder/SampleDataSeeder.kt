@@ -9,6 +9,9 @@ import com.example.data.preferences.UserPreferencesRepository
 import java.util.Calendar
 import java.util.UUID
 
+import com.example.data.dao.ExpenseSplitDao
+import com.example.data.model.ExpenseSplitEntity
+
 object SampleDataSeeder {
 
     val DEFAULT_CATEGORY_OTHER_ID = "cat_default_other"
@@ -93,7 +96,8 @@ object SampleDataSeeder {
     suspend fun seedInitialDataIfNeeded(
         categoryDao: CategoryDao,
         expenseDao: ExpenseDao,
-        preferencesRepository: UserPreferencesRepository
+        preferencesRepository: UserPreferencesRepository,
+        expenseSplitDao: ExpenseSplitDao? = null
     ) {
         val existingCategoriesCount = categoryDao.getCount()
         if (existingCategoriesCount == 0) {
@@ -108,12 +112,15 @@ object SampleDataSeeder {
         // Only seed sample data if no expenses exist in the database, preventing accidental injection over user records
         val existingExpensesCount = expenseDao.getExpensesCount()
         if (existingExpensesCount == 0) {
-            seedSampleExpenses(expenseDao)
+            seedSampleExpenses(expenseDao, expenseSplitDao)
         }
         preferencesRepository.setSampleDataSeeded(true)
     }
 
-    suspend fun seedSampleExpenses(expenseDao: ExpenseDao) {
+    suspend fun seedSampleExpenses(
+        expenseDao: ExpenseDao,
+        expenseSplitDao: ExpenseSplitDao? = null
+    ) {
         val expenses = mutableListOf<ExpenseEntity>()
         val calendar = Calendar.getInstance()
 
@@ -332,6 +339,52 @@ object SampleDataSeeder {
             )
         }
 
+        val sampleSplitExpenseId = "sample_split_dinner_id"
+        expenses.add(
+            ExpenseEntity(
+                id = sampleSplitExpenseId,
+                title = "Team Dinner & Drinks",
+                amount = 2400.0,
+                categoryId = "cat_default_food",
+                timestamp = getTimestamp(0, 15, 20, 30),
+                paymentMethod = PaymentMethod.UPI.name,
+                notes = "Shared dinner with team"
+            )
+        )
+
         expenseDao.insertExpenses(expenses)
+
+        if (expenseSplitDao != null) {
+            val sampleSplits = listOf(
+                ExpenseSplitEntity(
+                    id = "split_sample_1",
+                    expenseId = sampleSplitExpenseId,
+                    personName = "Alex",
+                    allocatedAmount = 600.0,
+                    percentage = 25.0,
+                    isPaid = true,
+                    settledTimestamp = getTimestamp(0, 16, 11, 0)
+                ),
+                ExpenseSplitEntity(
+                    id = "split_sample_2",
+                    expenseId = sampleSplitExpenseId,
+                    personName = "Priya",
+                    allocatedAmount = 600.0,
+                    percentage = 25.0,
+                    isPaid = false,
+                    settledTimestamp = null
+                ),
+                ExpenseSplitEntity(
+                    id = "split_sample_3",
+                    expenseId = sampleSplitExpenseId,
+                    personName = "Rohan",
+                    allocatedAmount = 600.0,
+                    percentage = 25.0,
+                    isPaid = false,
+                    settledTimestamp = null
+                )
+            )
+            expenseSplitDao.insertSplits(sampleSplits)
+        }
     }
 }

@@ -10,7 +10,12 @@ data class ExpenseWithCategory(
         parentColumn = "categoryId",
         entityColumn = "id"
     )
-    val category: CategoryEntity?
+    val category: CategoryEntity?,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "expenseId"
+    )
+    val splits: List<ExpenseSplitEntity> = emptyList()
 ) {
     val categoryName: String
         get() = category?.name ?: "Other"
@@ -20,4 +25,22 @@ data class ExpenseWithCategory(
 
     val categoryIconKey: String
         get() = category?.iconKey ?: "other"
+
+    val isSplit: Boolean
+        get() = splits.isNotEmpty()
+
+    val settledSplitsCount: Int
+        get() = splits.count { it.isPaid }
+
+    val pendingSplitsCount: Int
+        get() = splits.count { !it.isPaid }
+
+    val totalAllocatedToFriends: Double
+        get() = splits.sumOf { it.allocatedAmount }
+
+    val pendingAmountToReceive: Double
+        get() = splits.filter { !it.isPaid }.sumOf { it.allocatedAmount }
+
+    val myShare: Double
+        get() = (expense.amount - totalAllocatedToFriends).coerceAtLeast(0.0)
 }

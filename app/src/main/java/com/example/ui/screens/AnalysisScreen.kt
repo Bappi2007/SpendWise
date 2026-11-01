@@ -189,13 +189,13 @@ fun AnalysisScreen(
                                 val dayFormat = SimpleDateFormat("d MMM", Locale.getDefault())
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+                                    color = MaterialTheme.colorScheme.tertiaryContainer
                                 ) {
                                     Text(
                                         text = "Peak: ${dayFormat.format(Date(epoch))}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.tertiary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                     )
                                 }
                             }
@@ -273,6 +273,10 @@ fun AnalysisScreen(
             categories = categories,
             categorySpendings = summary.categoryBreakdowns,
             categoryBudgets = userPrefs.categoryBudgets,
+            isMonthlyLimitEnabled = userPrefs.isMonthlyLimitEnabled,
+            onToggleMonthlyLimit = { enabled ->
+                viewModel.setMonthlyLimitEnabled(enabled)
+            },
             onDismiss = { isBudgetSheetVisible = false },
             onSaveOverallBudget = { newBudget, applyToMonthOnly ->
                 if (applyToMonthOnly) {
@@ -385,12 +389,13 @@ fun AnalysisMetricsCards(
                 // % Change Badge
                 summary.percentageChange?.let { pct ->
                     val isIncrease = pct > 0
-                    val badgeColor = if (isIncrease) Color(0xFFDC2626) else Color(0xFF059669)
+                    val containerColor = if (isIncrease) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
+                    val contentColor = if (isIncrease) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
                     val icon = if (isIncrease) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown
 
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = badgeColor.copy(alpha = 0.15f)
+                        color = containerColor
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -399,14 +404,14 @@ fun AnalysisMetricsCards(
                             Icon(
                                 imageVector = icon,
                                 contentDescription = null,
-                                tint = badgeColor,
+                                tint = contentColor,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = String.format(Locale.US, "%+.1f%%", pct),
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = badgeColor
+                                color = contentColor
                             )
                         }
                     }
@@ -545,7 +550,7 @@ fun MonthlyBudgetCard(
             val progressColor = when {
                 summary.isOverBudget -> MaterialTheme.colorScheme.error
                 summary.budgetProgress > 0.8f -> MaterialTheme.colorScheme.tertiary
-                else -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.secondary
             }
 
             LinearProgressIndicator(

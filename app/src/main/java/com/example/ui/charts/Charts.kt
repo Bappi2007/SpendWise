@@ -449,3 +449,204 @@ fun MonthlyTrendLineChart(
         }
     }
 }
+
+@Composable
+fun SplitExpenseGraph(
+    overview: com.example.ui.viewmodel.SettlementOverview,
+    currencySymbol: String,
+    modifier: Modifier = Modifier
+) {
+    if (overview.totalSplitVolume <= 0 && overview.friendStats.isEmpty()) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "No split expenses logged yet to show graph",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+
+    val animationProgress = remember { Animatable(0f) }
+    LaunchedEffect(overview) {
+        animationProgress.snapTo(0f)
+        animationProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 800, easing = FastOutSlowInEasing)
+        )
+    }
+
+    val settledFraction = if (overview.totalSplitVolume > 0) {
+        (overview.totalSettledAmount / overview.totalSplitVolume).toFloat()
+    } else 0f
+
+    val settledColor = Color(0xFF10B981) // Emerald
+    val pendingColor = Color(0xFFF59E0B) // Amber
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        // Top High-Level Metric Tiles
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text(text = "Total Split", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "$currencySymbol${String.format(Locale.US, "%,.0f", overview.totalSplitVolume)}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = settledColor.copy(alpha = 0.15f),
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text(text = "Settled", style = MaterialTheme.typography.labelSmall, color = settledColor)
+                    Text(
+                        text = "$currencySymbol${String.format(Locale.US, "%,.0f", overview.totalSettledAmount)}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = settledColor
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = pendingColor.copy(alpha = 0.15f),
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text(text = "Pending", style = MaterialTheme.typography.labelSmall, color = pendingColor)
+                    Text(
+                        text = "$currencySymbol${String.format(Locale.US, "%,.0f", overview.totalPendingAmount)}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = pendingColor
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Ratio Bar
+        Text(
+            text = "Settlement Progress: ${(settledFraction * 100).toInt()}% Settled",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(pendingColor.copy(alpha = 0.35f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction = (settledFraction * animationProgress.value).coerceIn(0f, 1f))
+                    .height(10.dp)
+                    .background(settledColor)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Text(
+            text = "Split Volume by Friend:",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val maxFriendAllocated = (overview.friendStats.maxOfOrNull { it.totalAllocated } ?: 1.0).coerceAtLeast(1.0)
+
+        overview.friendStats.forEach { stat ->
+            val friendBarFraction = (stat.totalAllocated / maxFriendAllocated).toFloat()
+            val friendPaidFraction = if (stat.totalAllocated > 0) (stat.totalPaid / stat.totalAllocated).toFloat() else 0f
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stat.friendName,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "$currencySymbol${String.format(Locale.US, "%,.2f", stat.totalAllocated)} (${stat.percentageOfTotalSplits.toInt()}%)",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction = (friendBarFraction * animationProgress.value).coerceIn(0.05f, 1f))
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(pendingColor)
+                ) {
+                    if (friendPaidFraction > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fraction = friendPaidFraction.coerceIn(0f, 1f))
+                                .height(12.dp)
+                                .background(settledColor)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Settled: $currencySymbol${String.format(Locale.US, "%,.0f", stat.totalPaid)}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = settledColor
+                    )
+                    if (stat.totalPending > 0) {
+                        Text(
+                            text = "Owes you: $currencySymbol${String.format(Locale.US, "%,.0f", stat.totalPending)}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                            color = pendingColor
+                        )
+                    } else {
+                        Text(
+                            text = "All settled",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = settledColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+

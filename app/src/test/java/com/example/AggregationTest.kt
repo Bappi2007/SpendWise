@@ -54,9 +54,15 @@ class AggregationTest {
         val now = Calendar.getInstance()
         val todayMillis = now.timeInMillis
 
-        // Yesterday millis
-        val yesterdayCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val yesterdayMillis = yesterdayCal.timeInMillis
+        // Another day within the current month (yesterday if day > 1, or day 2 if day == 1)
+        val otherDayInMonthCal = Calendar.getInstance().apply {
+            if (get(Calendar.DAY_OF_MONTH) > 1) {
+                add(Calendar.DAY_OF_MONTH, -1)
+            } else {
+                add(Calendar.DAY_OF_MONTH, 1)
+            }
+        }
+        val otherDayInMonthMillis = otherDayInMonthCal.timeInMillis
 
         val expense1 = ExpenseEntity(
             id = "e1",
@@ -76,10 +82,10 @@ class AggregationTest {
         )
         val expense3 = ExpenseEntity(
             id = "e3",
-            title = "Groceries Yesterday",
+            title = "Groceries Another Day",
             amount = 1200.0,
             categoryId = sampleCategory.id,
-            timestamp = yesterdayMillis,
+            timestamp = otherDayInMonthMillis,
             paymentMethod = PaymentMethod.CASH.name
         )
 

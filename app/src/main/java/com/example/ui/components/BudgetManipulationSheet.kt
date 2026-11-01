@@ -48,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -69,14 +70,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Add
 import com.example.data.model.CategoryEntity
 import com.example.data.model.CategorySpending
+import com.example.data.model.FundEntity
 import com.example.ui.common.CategoryIconBadge
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.Emerald700
 import com.example.ui.theme.Mint400
 import com.example.ui.theme.RedDanger
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -90,15 +95,21 @@ fun BudgetManipulationSheet(
     categories: List<CategoryEntity>,
     categorySpendings: List<CategorySpending>,
     categoryBudgets: Map<String, Double>,
+    funds: List<FundEntity> = emptyList(),
+    isMonthlyLimitEnabled: Boolean = false,
+    onAddFund: ((title: String, amountText: String, source: String, notes: String?) -> Unit)? = null,
+    onDeleteFund: ((FundEntity) -> Unit)? = null,
+    onToggleMonthlyLimit: ((Boolean) -> Unit)? = null,
     onDismiss: () -> Unit,
     onSaveOverallBudget: (budget: Double, applyToMonthOnly: Boolean) -> Unit,
     onSaveCategoryBudget: (categoryId: String, budget: Double?) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Monthly, 1: Category Targets
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: My Funds, 1: Monthly Budget, 2: Category Targets
 
     var tempBudget by remember { mutableDoubleStateOf(currentBudget) }
     var applyToMonthOnly by remember { mutableStateOf(false) }
+    var isMonthlyLimitActive by remember(isMonthlyLimitEnabled) { mutableStateOf(isMonthlyLimitEnabled) }
 
     val daysInMonth = remember(year, month) {
         val cal = Calendar.getInstance().apply {
@@ -177,49 +188,406 @@ fun BudgetManipulationSheet(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Monthly Budget", fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) }
+                    text = { Text("My Funds", fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Category Targets", fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) }
+                    text = { Text("Monthly Limit", fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text("Category Targets", fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) }
                 )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             if (selectedTab == 0) {
-                // MONTHLY BUDGET MANIPULATION TAB
+                // MY FUNDS & INFLOW (Flexible Tracker)
+                var newFundAmountText by remember { mutableStateOf("") }
+                var newFundSource by remember { mutableStateOf("From Parents") }
+                var newFundNote by remember { mutableStateOf("") }
+                var fundAmountError by remember { mutableStateOf<String?>(null) }
 
-                // Scope Choice: Global vs Specific Month
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                val sourcePresets = listOf("From Parents", "Earned", "Pocket Money", "Gift", "Salary", "Other")
+
+                val totalAdded = if (funds.isNotEmpty()) funds.sumOf { it.amount } else currentBudget
+                val availBalance = totalAdded - monthSpent
+
+                // Available Balance Card
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (availBalance >= 0) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                        else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    FilterChip(
-                        selected = !applyToMonthOnly,
-                        onClick = { applyToMonthOnly = false },
-                        label = { Text("Default for All Months") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = applyToMonthOnly,
-                        onClick = { applyToMonthOnly = true },
-                        label = { Text("This Month Only") },
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Available to Spend",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "$currencySymbol${String.format(Locale.US, "%,.2f", availBalance)}",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (availBalance >= 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.Savings,
+                                contentDescription = null,
+                                tint = if (availBalance >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Total Funds Added: $currencySymbol${String.format(Locale.US, "%,.0f", totalAdded)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Spent: $currencySymbol${String.format(Locale.US, "%,.0f", monthSpent)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Primary Target Display
+                // + Add Funds Form Card
                 Card(
                     shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "+ Add Money (From Parents or Earned)",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Add whatever you received as you wish, with no rigid range or limits.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = newFundAmountText,
+                            onValueChange = {
+                                newFundAmountText = it
+                                fundAmountError = null
+                            },
+                            label = { Text("Amount ($currencySymbol)") },
+                            placeholder = { Text("e.g. 5000, 2000, 500") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            isError = fundAmountError != null,
+                            supportingText = fundAmountError?.let { { Text(it) } },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "Source:",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            sourcePresets.forEach { src ->
+                                FilterChip(
+                                    selected = newFundSource == src,
+                                    onClick = { newFundSource = src },
+                                    label = { Text(src, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = newFundNote,
+                            onValueChange = { newFundNote = it },
+                            label = { Text("Note / Description (Optional)") },
+                            placeholder = { Text("e.g. Allowance from Dad, freelance") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Button(
+                            onClick = {
+                                val amount = newFundAmountText.toDoubleOrNull()
+                                if (amount == null || amount <= 0) {
+                                    fundAmountError = "Please enter an amount > 0"
+                                } else {
+                                    onAddFund?.invoke(
+                                        newFundNote.ifBlank { newFundSource },
+                                        newFundAmountText,
+                                        newFundSource,
+                                        newFundNote.ifBlank { null }
+                                    )
+                                    newFundAmountText = ""
+                                    newFundNote = ""
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add to My Funds", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Inflow History
+                Text(
+                    text = "Money Received History:",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (funds.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "No custom funds logged yet. Add money you received from parents or earned above.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(14.dp)
+                        )
+                    }
+                } else {
+                    val dateFormat = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+                    funds.forEach { fund ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = fund.source,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (!fund.notes.isNullOrBlank() && fund.notes != fund.source) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "• ${fund.notes}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = dateFormat.format(Date(fund.timestamp)),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "+$currencySymbol${String.format(Locale.US, "%,.2f", fund.amount)}",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = Emerald700
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    IconButton(
+                                        onClick = { onDeleteFund?.invoke(fund) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Delete Fund Entry",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (selectedTab == 1) {
+                // MONTHLY BUDGET MANIPULATION TAB
+
+                // Monthly Limit ON/OFF Toggle Card
+                Card(
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        containerColor = if (isMonthlyLimitActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Monthly Spending Limit",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (isMonthlyLimitActive) "Active: spending is tracked against a fixed limit"
+                                else "Off: spending is tracked freely against your available funds",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Switch(
+                            checked = isMonthlyLimitActive,
+                            onCheckedChange = { checked ->
+                                isMonthlyLimitActive = checked
+                                onToggleMonthlyLimit?.invoke(checked)
+                            },
+                            modifier = Modifier.testTag("monthly_limit_toggle_switch")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (!isMonthlyLimitActive) {
+                    // Disabled State Card
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Savings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Monthly Limit is Disabled",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "You are tracking your money freely based on what you have (My Funds) instead of a rigid spending quota. Turn the switch above ON anytime if you want to set a fixed limit with alerts.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    isMonthlyLimitActive = true
+                                    onToggleMonthlyLimit?.invoke(true)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("turn_on_monthly_limit_btn")
+                            ) {
+                                Text("Turn On Monthly Limit")
+                            }
+                        }
+                    }
+                } else {
+                    // Scope Choice: Global vs Specific Month
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = !applyToMonthOnly,
+                            onClick = { applyToMonthOnly = false },
+                            label = { Text("Default for All Months") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = applyToMonthOnly,
+                            onClick = { applyToMonthOnly = true },
+                            label = { Text("This Month Only") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Primary Target Display
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -343,15 +711,16 @@ fun BudgetManipulationSheet(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     presetValues.forEach { preset ->
+                        val isSelected = tempBudget == preset
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = if (tempBudget == preset) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             modifier = Modifier.clickable { tempBudget = preset }
                         ) {
                             Text(
                                 text = "$currencySymbol${preset.toInt() / 1000}k",
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                color = if (tempBudget == preset) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium),
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
@@ -400,7 +769,7 @@ fun BudgetManipulationSheet(
                         val progressColor = when {
                             isOver -> MaterialTheme.colorScheme.error
                             progressFraction > 0.8f -> MaterialTheme.colorScheme.tertiary
-                            else -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.secondary
                         }
 
                         LinearProgressIndicator(
@@ -476,6 +845,7 @@ fun BudgetManipulationSheet(
                         text = "Apply ${if (applyToMonthOnly) "Month" else "Default"} Budget ($currencySymbol${String.format(Locale.US, "%,.0f", tempBudget)})",
                         fontWeight = FontWeight.Bold
                     )
+                }
                 }
             } else {
                 // CATEGORY TARGETS TAB

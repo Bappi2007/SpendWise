@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.screens.AnalysisScreen
 import com.example.ui.screens.CategoriesScreen
@@ -157,7 +158,7 @@ fun SpendWiseApp(
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 4.dp,
                 modifier = Modifier.testTag("bottom_nav_bar")
             ) {
                 AppDestination.entries.forEach { destination ->
@@ -171,11 +172,20 @@ fun SpendWiseApp(
                                 contentDescription = destination.title
                             )
                         },
-                        label = { Text(destination.title) },
+                        label = {
+                            Text(
+                                text = destination.title,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
+                                )
+                            )
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         modifier = Modifier.testTag(destination.testTag)
                     )
@@ -186,6 +196,7 @@ fun SpendWiseApp(
     ) { innerPadding ->
         Crossfade(
             targetState = currentDestination,
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 220),
             label = "screen_crossfade",
             modifier = Modifier.padding(innerPadding)
         ) { destination ->

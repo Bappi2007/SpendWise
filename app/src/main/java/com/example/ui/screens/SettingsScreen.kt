@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -58,6 +59,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -103,15 +105,14 @@ fun SettingsScreen(
     var isBudgetSheetVisible by remember { mutableStateOf(false) }
     var isExportDialogOpen by remember { mutableStateOf(false) }
     var isClearConfirmOpen by remember { mutableStateOf(false) }
+    var isClearRangeDialogOpen by remember { mutableStateOf(false) }
 
     // SAF Launcher for Backup Export
     val createBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
         uri?.let {
-            context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                viewModel.exportBackup(outputStream)
-            }
+            viewModel.exportBackup(context.contentResolver, it)
         }
     }
 
@@ -120,9 +121,7 @@ fun SettingsScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let {
-            context.contentResolver.openInputStream(it)?.use { inputStream ->
-                viewModel.processRestoreFile(inputStream)
-            }
+            viewModel.processRestoreFile(context.contentResolver, it)
         }
     }
 
@@ -210,9 +209,49 @@ fun SettingsScreen(
                     SettingsRow(
                         icon = Icons.Default.CalendarMonth,
                         title = "Monthly Budget Goal",
-                        subtitle = "${preferences.currencySymbol}${String.format(Locale.US, "%,.0f", preferences.monthlyBudget)} per month (Tap to tune)",
+                        subtitle = if (preferences.isMonthlyLimitEnabled)
+                            "${preferences.currencySymbol}${String.format(Locale.US, "%,.0f", preferences.monthlyBudget)} per month (Tap to tune)"
+                        else
+                            "Limit is currently OFF (Tap to configure)",
                         onClick = { isBudgetSheetVisible = true }
                     )
+
+                    // Monthly Limit ON/OFF Toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    text = "Monthly Spending Limit",
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (preferences.isMonthlyLimitEnabled) "Limit is active (${preferences.currencySymbol}${String.format(Locale.US, "%,.0f", preferences.monthlyBudget)})"
+                                    else "Turned off (Track spending freely by available funds)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = preferences.isMonthlyLimitEnabled,
+                            onCheckedChange = { checked ->
+                                viewModel.setMonthlyLimitEnabled(checked)
+                            },
+                            modifier = Modifier.testTag("settings_monthly_limit_switch")
+                        )
+                    }
 
                     // Theme Mode Setting
                     Column(
@@ -391,10 +430,11 @@ fun SettingsScreen(
             ) {
                 Column {
                     SettingsRow(
-                        icon = Icons.Default.Dataset,
-                        title = "Reload Sample Data",
-                        subtitle = "Load realistic expenses to test charts and metrics",
-                        onClick = { viewModel.reseedSampleData() }
+                        icon = Icons.Default.CalendarMonth,
+                        title = "Clear Expenses in Date Range",
+                        subtitle = "Select start and end dates from calendar to delete",
+                        titleColor = MaterialTheme.colorScheme.error,
+                        onClick = { isClearRangeDialogOpen = true }
                     )
 
                     SettingsRow(
@@ -413,7 +453,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -421,10 +461,17 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Offline-first • Jetpack Compose • Room Database",
+                    text = "Offline-first Jetpack Compose Room Database",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Developed by Bishal Mandal",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -457,6 +504,10 @@ fun SettingsScreen(
             categories = categories,
             categorySpendings = emptyList(),
             categoryBudgets = preferences.categoryBudgets,
+            isMonthlyLimitEnabled = preferences.isMonthlyLimitEnabled,
+            onToggleMonthlyLimit = { enabled ->
+                viewModel.setMonthlyLimitEnabled(enabled)
+            },
             onDismiss = { isBudgetSheetVisible = false },
             onSaveOverallBudget = { newBudget, applyToMonthOnly ->
                 if (applyToMonthOnly) {
@@ -512,6 +563,16 @@ fun SettingsScreen(
                 TextButton(onClick = { isClearConfirmOpen = false }) {
                     Text("Cancel")
                 }
+            }
+        )
+    }
+
+    // Clear Expenses in Date Range Dialog
+    if (isClearRangeDialogOpen) {
+        ClearDateRangeDialog(
+            onDismiss = { isClearRangeDialogOpen = false },
+            onConfirmClear = { startMillis, endMillis ->
+                viewModel.clearExpensesInRange(startMillis, endMillis)
             }
         )
     }
@@ -708,6 +769,9 @@ fun RestorePreviewDialog(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(text = "• Transactions: ${preview.expensesCount}", style = MaterialTheme.typography.bodySmall)
+                        if (preview.splitsCount > 0) {
+                            Text(text = "• Split Allocations: ${preview.splitsCount}", style = MaterialTheme.typography.bodySmall)
+                        }
                         Text(text = "• Categories: ${preview.categoriesCount}", style = MaterialTheme.typography.bodySmall)
                         Text(text = "• Total Value: ${preview.currencySymbol}${String.format(Locale.US, "%,.2f", preview.totalExpenseAmount)}", style = MaterialTheme.typography.bodySmall)
                         if (preview.earliestExpenseDateEpoch != null && preview.latestExpenseDateEpoch != null) {
@@ -797,15 +861,14 @@ fun ExportReportDialog(
         contract = ActivityResultContracts.CreateDocument(selectedFormat.mimeType)
     ) { uri: Uri? ->
         uri?.let {
-            context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                viewModel.exportReportToStream(
-                    scope = selectedScope,
-                    format = selectedFormat,
-                    customStartMillis = customStartMillis,
-                    customEndMillis = customEndMillis,
-                    outputStream = outputStream
-                )
-            }
+            viewModel.exportReportToUri(
+                contentResolver = context.contentResolver,
+                uri = it,
+                scope = selectedScope,
+                format = selectedFormat,
+                customStartMillis = customStartMillis,
+                customEndMillis = customEndMillis
+            )
             onDismiss()
         }
     }
@@ -957,3 +1020,130 @@ fun ExportReportDialog(
         }
     }
 }
+
+@Composable
+fun ClearDateRangeDialog(
+    onDismiss: () -> Unit,
+    onConfirmClear: (startMillis: Long, endMillis: Long) -> Unit
+) {
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.getDefault()) }
+
+    var startMillis by remember {
+        mutableLongStateOf(
+            Calendar.getInstance().apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        )
+    }
+    var endMillis by remember {
+        mutableLongStateOf(
+            Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+                set(Calendar.MILLISECOND, 999)
+            }.timeInMillis
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.CalendarMonth,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = { Text("Clear Expenses by Date Range") },
+        text = {
+            Column {
+                Text(
+                    text = "Select calendar dates to delete recorded expenses:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val c = Calendar.getInstance().apply { timeInMillis = startMillis }
+                            DatePickerDialog(
+                                context,
+                                { _, y, m, d ->
+                                    val newC = Calendar.getInstance().apply {
+                                        set(y, m, d, 0, 0, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }
+                                    startMillis = newC.timeInMillis
+                                },
+                                c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
+                            ).show()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("From Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(dateFormat.format(Date(startMillis)), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val c = Calendar.getInstance().apply { timeInMillis = endMillis }
+                            DatePickerDialog(
+                                context,
+                                { _, y, m, d ->
+                                    val newC = Calendar.getInstance().apply {
+                                        set(y, m, d, 23, 59, 59)
+                                        set(Calendar.MILLISECOND, 999)
+                                    }
+                                    endMillis = newC.timeInMillis
+                                },
+                                c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
+                            ).show()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("To Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(dateFormat.format(Date(endMillis)), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Expenses within these dates will be permanently removed. Custom categories are preserved.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirmClear(startMillis, endMillis)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Delete Expenses")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+

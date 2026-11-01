@@ -22,7 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class SeedingPersistenceTest {
 
     private lateinit var context: Context
@@ -41,7 +41,10 @@ class SeedingPersistenceTest {
         expenseDao = database.expenseDao()
         categoryDao = database.categoryDao()
         preferencesRepository = UserPreferencesRepository(context)
-        expenseRepository = ExpenseRepository(expenseDao, categoryDao, preferencesRepository)
+        runBlocking {
+            preferencesRepository.setSampleDataSeeded(false)
+        }
+        expenseRepository = ExpenseRepository(expenseDao, categoryDao, preferencesRepository, database.expenseSplitDao())
     }
 
     @After
@@ -53,9 +56,10 @@ class SeedingPersistenceTest {
     fun `clearAllData keeps isSampleDataSeeded true so restart does not restore sample data`() = runBlocking {
         // First initial seed
         SampleDataSeeder.seedInitialDataIfNeeded(categoryDao, expenseDao, preferencesRepository)
-        assertTrue(preferencesRepository.getPreferencesSync().isSampleDataSeeded)
-        val initialCount = expenseDao.getExpensesCount()
-        assertTrue("Initial expenses must be seeded", initialCount > 0)
+        val seededPref = preferencesRepository.getPreferencesSync().isSampleDataSeeded
+        val expenseCount = expenseDao.getExpensesCount()
+        assertTrue("Expected isSampleDataSeeded to be true, got $seededPref (expenses in db: $expenseCount)", seededPref)
+        assertTrue("Initial expenses must be seeded", expenseCount > 0)
 
         // User clears data
         expenseRepository.clearAllData()

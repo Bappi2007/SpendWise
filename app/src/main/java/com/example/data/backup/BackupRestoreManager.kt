@@ -2,8 +2,10 @@ package com.example.data.backup
 
 import com.example.data.dao.CategoryDao
 import com.example.data.dao.ExpenseDao
+import com.example.data.dao.ExpenseSplitDao
 import com.example.data.model.CategoryEntity
 import com.example.data.model.ExpenseEntity
+import com.example.data.model.ExpenseSplitEntity
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
 import org.json.JSONArray
@@ -16,6 +18,7 @@ data class BackupPreview(
     val exportTimestamp: Long,
     val categoriesCount: Int,
     val expensesCount: Int,
+    val splitsCount: Int = 0,
     val earliestExpenseDateEpoch: Long?,
     val latestExpenseDateEpoch: Long?,
     val totalExpenseAmount: Double,
@@ -23,18 +26,24 @@ data class BackupPreview(
 )
 
 sealed class RestoreResult {
-    data class Success(val categoriesRestored: Int, val expensesRestored: Int, val mode: String) : RestoreResult()
+    data class Success(
+        val categoriesRestored: Int,
+        val expensesRestored: Int,
+        val splitsRestored: Int,
+        val mode: String
+    ) : RestoreResult()
     data class Error(val message: String) : RestoreResult()
 }
 
 class BackupRestoreManager(
     private val categoryDao: CategoryDao,
     private val expenseDao: ExpenseDao,
-    private val preferencesRepository: UserPreferencesRepository
+    private val preferencesRepository: UserPreferencesRepository,
+    private val expenseSplitDao: ExpenseSplitDao? = null
 ) {
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 1
+        const val CURRENT_SCHEMA_VERSION = 2
         const val APP_IDENTIFIER = "SpendWise"
     }
 
@@ -67,6 +76,10 @@ class BackupRestoreManager(
         }
         root.put("categories", catArray)
 
+        // All splits map by expenseId
+        val allSplits = expenseSplitDao?.getAllSplitsSync() ?: emptyList()
+        val splitsByExpense = allSplits.groupBy { it.expenseId }
+
         // Expenses
         val expenses = expenseDao.getAllRawExpensesSync()
         val expArray = JSONArray()
@@ -81,6 +94,27 @@ class BackupRestoreManager(
             if (exp.notes != null) {
                 eObj.put("notes", exp.notes)
             }
+
+            // Attached splits
+            val attachedSplits = splitsByExpense[exp.id] ?: emptyList()
+            if (attachedSplits.isNotEmpty()) {
+                val splitArray = JSONArray()
+                for (sp in attachedSplits) {
+                    val sObj = JSONObject()
+                    sObj.put("id", sp.id)
+                    sObj.put("expenseId", sp.expenseId)
+                    sObj.put("personName", sp.personName)
+                    sObj.put("allocatedAmount", sp.allocatedAmount)
+                    sObj.put("percentage", sp.percentage)
+                    sObj.put("isPaid", sp.isPaid)
+                    if (sp.settledTimestamp != null) {
+                        sObj.put("settledTimestamp", sp.settledTimestamp)
+                    }
+                    splitArray.put(sObj)
+                }
+                eObj.put("splits", splitArray)
+            }
+
             expArray.put(eObj)
         }
         root.put("expenses", expArray)
@@ -123,6 +157,7 @@ class BackupRestoreManager(
             var earliestDate: Long? = null
             var latestDate: Long? = null
             var totalAmount = 0.0
+            var totalSplits = 0
 
             for (i in 0 until expensesArray.length()) {
                 val expObj = expensesArray.getJSONObject(i)
@@ -131,6 +166,11 @@ class BackupRestoreManager(
                 totalAmount += amount
                 if (earliestDate == null || time < earliestDate) earliestDate = time
                 if (latestDate == null || time > latestDate) latestDate = time
+
+                val splitsArray = expObj.optJSONArray("splits")
+                if (splitsArray != null) {
+                    totalSplits += splitsArray.length()
+                }
             }
 
             val preview = BackupPreview(
@@ -138,6 +178,7 @@ class BackupRestoreManager(
                 exportTimestamp = exportTimestamp,
                 categoriesCount = categoriesArray.length(),
                 expensesCount = expensesArray.length(),
+                splitsCount = totalSplits,
                 earliestExpenseDateEpoch = earliestDate,
                 latestExpenseDateEpoch = latestDate,
                 totalExpenseAmount = totalAmount,
@@ -181,11 +222,14 @@ class BackupRestoreManager(
             }
 
             val expensesToRestore = mutableListOf<ExpenseEntity>()
+            val splitsToRestore = mutableListOf<ExpenseSplitEntity>()
+
             for (i in 0 until expensesArray.length()) {
                 val e = expensesArray.getJSONObject(i)
+                val expenseId = e.getString("id")
                 expensesToRestore.add(
                     ExpenseEntity(
-                        id = e.getString("id"),
+                        id = expenseId,
                         title = e.getString("title"),
                         amount = e.getDouble("amount"),
                         categoryId = e.getString("categoryId"),
@@ -194,14 +238,37 @@ class BackupRestoreManager(
                         notes = if (e.has("notes") && !e.isNull("notes")) e.getString("notes") else null
                     )
                 )
+
+                val splitsArray = e.optJSONArray("splits")
+                if (splitsArray != null) {
+                    for (j in 0 until splitsArray.length()) {
+                        val s = splitsArray.getJSONObject(j)
+                        splitsToRestore.add(
+                            ExpenseSplitEntity(
+                                id = s.optString("id", java.util.UUID.randomUUID().toString()),
+                                expenseId = expenseId,
+                                personName = s.getString("personName"),
+                                allocatedAmount = s.getDouble("allocatedAmount"),
+                                percentage = s.optDouble("percentage", 0.0),
+                                isPaid = s.optBoolean("isPaid", false),
+                                settledTimestamp = if (s.has("settledTimestamp") && !s.isNull("settledTimestamp")) s.getLong("settledTimestamp") else null
+                            )
+                        )
+                    }
+                }
             }
 
             if (replaceAll) {
                 // Wipe and replace
+                expenseSplitDao?.deleteAllSplits()
                 expenseDao.deleteAllExpenses()
                 categoryDao.deleteAll()
+
                 categoryDao.insertCategories(categoriesToRestore)
                 expenseDao.insertExpenses(expensesToRestore)
+                if (splitsToRestore.isNotEmpty()) {
+                    expenseSplitDao?.insertSplits(splitsToRestore)
+                }
 
                 if (settingsObj != null) {
                     if (settingsObj.has("currencySymbol")) {
@@ -215,7 +282,7 @@ class BackupRestoreManager(
                     }
                 }
                 preferencesRepository.setLastBackupTimestamp(System.currentTimeMillis())
-                RestoreResult.Success(categoriesToRestore.size, expensesToRestore.size, "Replaced All")
+                RestoreResult.Success(categoriesToRestore.size, expensesToRestore.size, splitsToRestore.size, "Replaced All")
             } else {
                 // Merge mode: Skip duplicates using unique IDs
                 val existingCategories = categoryDao.getAllCategoriesSync().associateBy { it.id }
@@ -230,7 +297,15 @@ class BackupRestoreManager(
                     expenseDao.insertExpenses(newExpenses)
                 }
 
-                RestoreResult.Success(newCategories.size, newExpenses.size, "Merged")
+                if (splitsToRestore.isNotEmpty() && expenseSplitDao != null) {
+                    val existingSplits = expenseSplitDao.getAllSplitsSync().associateBy { it.id }
+                    val newSplits = splitsToRestore.filter { !existingSplits.containsKey(it.id) }
+                    if (newSplits.isNotEmpty()) {
+                        expenseSplitDao.insertSplits(newSplits)
+                    }
+                }
+
+                RestoreResult.Success(newCategories.size, newExpenses.size, splitsToRestore.size, "Merged")
             }
         } catch (e: Exception) {
             RestoreResult.Error(e.localizedMessage ?: "Unknown restore error")
