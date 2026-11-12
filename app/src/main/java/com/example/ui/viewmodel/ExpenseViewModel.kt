@@ -384,9 +384,75 @@ class ExpenseViewModel(
 
     fun toggleSplitPaidStatus(splitId: String, isPaid: Boolean) {
         viewModelScope.launch {
-            repository.setSplitPaidStatus(splitId, isPaid)
-            emitSnackbar(if (isPaid) "Marked share as paid" else "Marked share as unpaid")
+            val updatedSplit = repository.setSplitPaidStatus(splitId, isPaid)
+            if (updatedSplit != null) {
+                if (isPaid) {
+                    val amountFormatted = String.format(Locale.getDefault(), "%.0f", updatedSplit.allocatedAmount)
+                    _eventFlow.emit(
+                        UiEvent.ShowSnackbar(
+                            message = "Settled $amountFormatted from ${updatedSplit.personName}. Added back to available funds!",
+                            actionLabel = "UNDO",
+                            onAction = {
+                                toggleSplitPaidStatus(splitId, false)
+                            }
+                        )
+                    )
+                } else {
+                    emitSnackbar("Marked debt as pending. Fund balance updated.")
+                }
+            } else {
+                emitSnackbar(if (isPaid) "Marked share as paid" else "Marked share as unpaid")
+            }
         }
+    }
+
+    fun lendMoneyToFriend(
+        friendName: String,
+        amountText: String,
+        paymentMethod: PaymentMethod,
+        notes: String?,
+        timestamp: Long = System.currentTimeMillis()
+    ): Boolean {
+        val amount = amountText.toDoubleOrNull()
+        if (amount == null || amount <= 0.0) {
+            emitSnackbar("Please enter a valid amount greater than 0")
+            return false
+        }
+        val trimmed = friendName.trim()
+        if (trimmed.isBlank()) {
+            emitSnackbar("Please select or enter friend's name")
+            return false
+        }
+        viewModelScope.launch {
+            repository.lendMoneyToFriend(trimmed, amount, paymentMethod, notes, timestamp)
+            val formatted = String.format(Locale.getDefault(), "%.0f", amount)
+            emitSnackbar("Recorded $formatted lent to $trimmed. Deducted from funds & tracked in Who Owes Me.")
+        }
+        return true
+    }
+
+    fun borrowMoneyFromFriend(
+        friendName: String,
+        amountText: String,
+        notes: String?,
+        timestamp: Long = System.currentTimeMillis()
+    ): Boolean {
+        val amount = amountText.toDoubleOrNull()
+        if (amount == null || amount <= 0.0) {
+            emitSnackbar("Please enter a valid amount greater than 0")
+            return false
+        }
+        val trimmed = friendName.trim()
+        if (trimmed.isBlank()) {
+            emitSnackbar("Please enter friend's name")
+            return false
+        }
+        viewModelScope.launch {
+            repository.borrowMoneyFromFriend(trimmed, amount, notes, timestamp)
+            val formatted = String.format(Locale.getDefault(), "%.0f", amount)
+            emitSnackbar("Added $formatted borrowed from $trimmed to available funds")
+        }
+        return true
     }
 
     fun deleteExpense(item: ExpenseWithCategory) {

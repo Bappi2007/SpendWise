@@ -18,6 +18,9 @@ interface FriendDao {
     @Query("SELECT * FROM friends ORDER BY name ASC")
     suspend fun getAllFriendsSync(): List<FriendEntity>
 
+    @Query("SELECT * FROM friends WHERE LOWER(name) = LOWER(:name) LIMIT 1")
+    suspend fun getFriendByName(name: String): FriendEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFriend(friend: FriendEntity)
 

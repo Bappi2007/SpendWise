@@ -232,4 +232,135 @@ class FundsAndFriendsTest {
         assertTrue(dayGroup.items[1] is DashboardTransactionItem.Expense)
         assertEquals("Coffee", dayGroup.items[1].title)
     }
+
+    @Test
+    fun `when monthly limit is disabled month summary calculates budget according to total income`() = runBlocking {
+        val category = CategoryEntity(
+            id = "cat_general",
+            name = "General",
+            iconKey = "general",
+            colorHex = 0xFF10B981L,
+            isDefault = true
+        )
+        database.categoryDao().insertCategory(category)
+
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.DAY_OF_MONTH, 10)
+            set(java.util.Calendar.HOUR_OF_DAY, 12)
+        }
+        val midMonth = cal.timeInMillis
+
+        // Add 10,000 income from parents
+        fundDao.insertFund(
+            FundEntity(
+                id = "fund_income_1",
+                title = "Income from Parents",
+                amount = 10000.0,
+                source = "From Parents",
+                timestamp = midMonth
+            )
+        )
+
+        // Add 3,000 expense
+        expenseDao.insertExpense(
+            ExpenseEntity(
+                id = "exp_1",
+                title = "Groceries",
+                amount = 3000.0,
+                categoryId = category.id,
+                timestamp = midMonth
+            )
+        )
+
+        val repository = com.example.data.repository.ExpenseRepository(
+            expenseDao = expenseDao,
+            categoryDao = database.categoryDao(),
+            preferencesRepository = com.example.data.preferences.UserPreferencesRepository(context),
+            expenseSplitDao = database.expenseSplitDao(),
+            friendDao = friendDao,
+            fundDao = fundDao
+        )
+        repository.setMonthlyLimitEnabled(false)
+
+        val summary = repository.calculateMonthSummary(
+            year = cal.get(java.util.Calendar.YEAR),
+            month = cal.get(java.util.Calendar.MONTH) + 1,
+            monthlyBudget = 25000.0
+        )
+
+        assertEquals(10000.0, summary.monthlyBudget, 0.001)
+        assertEquals(3000.0, summary.totalSpent, 0.001)
+        assertEquals(0.3f, summary.budgetProgress, 0.01f)
+        org.junit.Assert.assertFalse(summary.isOverBudget)
+        org.junit.Assert.assertFalse(summary.isMonthlyLimitEnabled)
+    }
+
+    @Test
+    fun `when money is lent to friend and repaid, available funds decreases then automatically restores`() = runBlocking {
+        val repository = com.example.data.repository.ExpenseRepository(
+            expenseDao = expenseDao,
+            categoryDao = database.categoryDao(),
+            preferencesRepository = com.example.data.preferences.UserPreferencesRepository(context),
+            expenseSplitDao = database.expenseSplitDao(),
+            friendDao = friendDao,
+            fundDao = fundDao
+        )
+
+        // 1. Initial fund of 10,000
+        fundDao.insertFund(
+            FundEntity(
+                id = "fund_init",
+                title = "Salary",
+                amount = 10000.0,
+                source = "Job",
+                timestamp = System.currentTimeMillis()
+            )
+        )
+
+        val totalFundsBefore = fundDao.getTotalFundsAmountSync()
+        assertEquals(10000.0, totalFundsBefore, 0.001)
+
+        // 2. Lend 2,500 to Rahul
+        val (expense, split) = repository.lendMoneyToFriend(
+            friendName = "Rahul",
+            amount = 2500.0,
+            paymentMethod = PaymentMethod.UPI,
+            notes = "Emergency money"
+        )
+
+        assertEquals("Lent to Rahul", expense.title)
+        assertEquals(2500.0, expense.amount, 0.001)
+        assertEquals("Rahul", split.personName)
+        assertEquals(2500.0, split.allocatedAmount, 0.001)
+        org.junit.Assert.assertFalse(split.isPaid)
+
+        // Friend should automatically be saved in FriendDao
+        val savedFriend = friendDao.getFriendByName("Rahul")
+        org.junit.Assert.assertNotNull(savedFriend)
+
+        // 3. Mark debt as settled / repaid
+        val updatedSplit = repository.setSplitPaidStatus(split.id, true)
+        org.junit.Assert.assertNotNull(updatedSplit)
+        assertTrue(updatedSplit!!.isPaid)
+
+        // Repayment fund should automatically be added
+        val allFundsAfterRepaid = fundDao.getAllFundsSync()
+        val repaymentFund = allFundsAfterRepaid.find { it.id == "repay_split_${split.id}" }
+        org.junit.Assert.assertNotNull(repaymentFund)
+        assertEquals("Repayment from Rahul", repaymentFund!!.title)
+        assertEquals(2500.0, repaymentFund.amount, 0.001)
+
+        val totalFundsAfterRepaid = fundDao.getTotalFundsAmountSync()
+        assertEquals(12500.0, totalFundsAfterRepaid, 0.001)
+
+        // 4. If unmarked as paid, repayment fund should be cleanly removed
+        val unmarkedSplit = repository.setSplitPaidStatus(split.id, false)
+        org.junit.Assert.assertNotNull(unmarkedSplit)
+        org.junit.Assert.assertFalse(unmarkedSplit!!.isPaid)
+
+        val allFundsAfterUnmarked = fundDao.getAllFundsSync()
+        val removedRepayment = allFundsAfterUnmarked.find { it.id == "repay_split_${split.id}" }
+        org.junit.Assert.assertNull(removedRepayment)
+        assertEquals(10000.0, fundDao.getTotalFundsAmountSync(), 0.001)
+    }
 }

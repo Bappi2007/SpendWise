@@ -22,7 +22,12 @@ SpendWise operates 100% offline with **zero network permissions**, keeping all f
 - **Swipe-to-Delete with Undo**: Swipe left on any expense to delete it with an immediate confirmation dialog and an interactive 4-second **UNDO** `Snackbar`.
 - **Tap to Edit**: Modify any logged expense directly in a dedicated bottom sheet.
 
-### 2. 👥 Split Expenses & Friends Hub
+### 2. 👥 Split Expenses, Friend Loans & Friends Hub
+- **Dedicated Friend Money Lending & Borrowing**:
+  - Log money lent to friends or borrowed from friends directly in the primary Add bottom sheet via the top **"Lend / Borrow"** mode switch.
+  - **Lending Flow**: Automatically categorizes as "Money Lent", tracks the unpaid debt in *Who Owes Me*, and deducts from your available funds until the friend repays.
+  - **Automated Repayment & Fund Balance Restoration**: When a friend repays and you mark the debt as settled, SpendWise automatically generates an inflow fund entry (`"Repayment from [Friend]"`) that immediately restores the money back into your available balance, accompanied by a confirmation Snackbar with **UNDO** support.
+  - **Borrowing Flow**: Log money borrowed from friends, instantly adding the received funds into your available spending balance.
 - **Group Splitting**: Split any expense among friends with one tap directly inside the expense creation sheet or settlement hub.
 - **Three Division Modes**:
   - **Equal Division**: Splits the total equally among all selected participants.
@@ -32,7 +37,7 @@ SpendWise operates 100% offline with **zero network permissions**, keeping all f
 - **Settlement Tracking & Checkbox System**:
   - Quick checkbox toggles to mark when someone pays you back.
   - Dedicated **Who Owes Me & Split Hub** on the home screen showing total pending receivables and individual breakdowns.
-  - Visual status chips distinguishing **Pending** from **Settled**.
+  - Visual status chips distinguishing **Pending** from **Settled**, with dedicated **"Awaiting Repayment"** and **"Repaid"** handshake badges for friend loans.
 - **Visual Split Graph**: Interactive graphic chart illustrating per-person breakdown and collected vs. pending debts.
 
 ### 3. 🎛️ Flexible Budget Controller & Inflow Tracking

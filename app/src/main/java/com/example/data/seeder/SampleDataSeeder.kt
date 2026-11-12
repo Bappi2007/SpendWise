@@ -15,6 +15,7 @@ import com.example.data.model.ExpenseSplitEntity
 object SampleDataSeeder {
 
     val DEFAULT_CATEGORY_OTHER_ID = "cat_default_other"
+    val CATEGORY_LENT_ID = "cat_default_money_lent"
 
     fun getDefaultCategories(): List<CategoryEntity> {
         return listOf(
@@ -83,12 +84,20 @@ object SampleDataSeeder {
                 sortOrder = 8
             ),
             CategoryEntity(
+                id = CATEGORY_LENT_ID,
+                name = "Money Lent",
+                iconKey = "money_lent",
+                colorHex = 0xFF0171DF, // Brand Blue
+                isDefault = true,
+                sortOrder = 9
+            ),
+            CategoryEntity(
                 id = DEFAULT_CATEGORY_OTHER_ID,
                 name = "Other",
                 iconKey = "other",
                 colorHex = 0xFF64748B, // Slate
                 isDefault = true,
-                sortOrder = 9
+                sortOrder = 10
             )
         )
     }

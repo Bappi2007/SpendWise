@@ -35,7 +35,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Handshake
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Money
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.Button
@@ -56,6 +59,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -89,6 +94,16 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+enum class AddEntryMode {
+    REGULAR_EXPENSE,
+    FRIEND_LOAN
+}
+
+enum class FriendLoanDirection {
+    LENT,
+    BORROWED
+}
+
 data class ParticipantInputState(
     val id: String = java.util.UUID.randomUUID().toString(),
     val name: String,
@@ -113,10 +128,33 @@ fun AddExpenseBottomSheet(
         paymentMethod: PaymentMethod,
         notes: String?,
         splits: List<SplitDraftItem>
-    ) -> Boolean
+    ) -> Boolean,
+    onLendMoney: (
+        friendName: String,
+        amountText: String,
+        paymentMethod: PaymentMethod,
+        notes: String?,
+        timestamp: Long
+    ) -> Boolean = { _, _, _, _, _ -> false },
+    onBorrowMoney: (
+        friendName: String,
+        amountText: String,
+        notes: String?,
+        timestamp: Long
+    ) -> Boolean = { _, _, _, _ -> false }
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
+
+    var activeMode by remember { mutableStateOf(AddEntryMode.REGULAR_EXPENSE) }
+    var loanDirection by remember { mutableStateOf(FriendLoanDirection.LENT) }
+    var friendNameInput by remember { mutableStateOf("") }
+    var friendAmountInput by remember { mutableStateOf("") }
+    var friendPaymentMethod by remember { mutableStateOf(PaymentMethod.UPI) }
+    var friendTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var friendNotes by remember { mutableStateOf("") }
+    var friendNameError by remember { mutableStateOf<String?>(null) }
+    var friendAmountError by remember { mutableStateOf<String?>(null) }
 
     var amount by remember {
         mutableStateOf(expenseToEdit?.expense?.amount?.let {
@@ -194,7 +232,7 @@ fun AddExpenseBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (expenseToEdit == null) "Add Expense" else "Edit Expense",
+                    text = if (expenseToEdit != null) "Edit Expense" else if (activeMode == AddEntryMode.REGULAR_EXPENSE) "Add Expense" else "Friend Loan / Borrow",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -203,11 +241,102 @@ fun AddExpenseBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Amount Input with currency
-            OutlinedTextField(
-                value = amount,
+            // Mode Selector Tabs (only in create mode)
+            if (expenseToEdit == null) {
+                TabRow(
+                    selectedTabIndex = if (activeMode == AddEntryMode.REGULAR_EXPENSE) 0 else 1,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                ) {
+                    Tab(
+                        selected = activeMode == AddEntryMode.REGULAR_EXPENSE,
+                        onClick = { activeMode = AddEntryMode.REGULAR_EXPENSE },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Payments,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Regular Expense", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    )
+                    Tab(
+                        selected = activeMode == AddEntryMode.FRIEND_LOAN,
+                        onClick = { activeMode = AddEntryMode.FRIEND_LOAN },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Handshake,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Lend / Borrow", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (activeMode == AddEntryMode.FRIEND_LOAN && expenseToEdit == null) {
+                FriendLoanContent(
+                    currencySymbol = currencySymbol,
+                    friends = friends,
+                    loanDirection = loanDirection,
+                    onDirectionChange = { loanDirection = it },
+                    friendName = friendNameInput,
+                    onFriendNameChange = {
+                        friendNameInput = it
+                        if (friendNameError != null) friendNameError = null
+                    },
+                    amount = friendAmountInput,
+                    onAmountChange = {
+                        friendAmountInput = it
+                        if (friendAmountError != null) friendAmountError = null
+                    },
+                    paymentMethod = friendPaymentMethod,
+                    onPaymentMethodChange = { friendPaymentMethod = it },
+                    timestamp = friendTimestamp,
+                    onTimestampChange = { friendTimestamp = it },
+                    notes = friendNotes,
+                    onNotesChange = { friendNotes = it },
+                    nameError = friendNameError,
+                    amountError = friendAmountError,
+                    onSave = {
+                        val amtVal = friendAmountInput.toDoubleOrNull()
+                        if (amtVal == null || amtVal <= 0) {
+                            friendAmountError = "Enter a valid amount > 0"
+                            return@FriendLoanContent
+                        }
+                        if (friendNameInput.isBlank()) {
+                            friendNameError = "Please enter friend's name"
+                            return@FriendLoanContent
+                        }
+
+                        val success = if (loanDirection == FriendLoanDirection.LENT) {
+                            onLendMoney(friendNameInput, friendAmountInput, friendPaymentMethod, friendNotes, friendTimestamp)
+                        } else {
+                            onBorrowMoney(friendNameInput, friendAmountInput, friendNotes, friendTimestamp)
+                        }
+                        if (success) {
+                            onDismiss()
+                        }
+                    }
+                )
+            } else {
+                // Amount Input with currency
+                OutlinedTextField(
+                    value = amount,
                 onValueChange = {
                     amount = it
                     if (amountError != null) amountError = null
@@ -1094,6 +1223,318 @@ fun AddExpenseBottomSheet(
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
             }
+        }
+    }
+}
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FriendLoanContent(
+    currencySymbol: String,
+    friends: List<FriendEntity>,
+    loanDirection: FriendLoanDirection,
+    onDirectionChange: (FriendLoanDirection) -> Unit,
+    friendName: String,
+    onFriendNameChange: (String) -> Unit,
+    amount: String,
+    onAmountChange: (String) -> Unit,
+    paymentMethod: PaymentMethod,
+    onPaymentMethodChange: (PaymentMethod) -> Unit,
+    timestamp: Long,
+    onTimestampChange: (Long) -> Unit,
+    notes: String,
+    onNotesChange: (String) -> Unit,
+    nameError: String?,
+    amountError: String?,
+    onSave: () -> Unit
+) {
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+    val suggestedFriends = listOf("Rahul", "Priya", "Alex", "Rohan", "Ananya", "Sara")
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Direction selector
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = loanDirection == FriendLoanDirection.LENT,
+                onClick = { onDirectionChange(FriendLoanDirection.LENT) },
+                label = { Text("I Lent Money", fontWeight = FontWeight.Bold) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Handshake,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                modifier = Modifier.weight(1f)
+            )
+            FilterChip(
+                selected = loanDirection == FriendLoanDirection.BORROWED,
+                onClick = { onDirectionChange(FriendLoanDirection.BORROWED) },
+                label = { Text("I Borrowed", fontWeight = FontWeight.Bold) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Amount Input with currency
+        OutlinedTextField(
+            value = amount,
+            onValueChange = onAmountChange,
+            label = { Text("Amount") },
+            prefix = {
+                Text(
+                    text = "$currencySymbol ",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            isError = amountError != null,
+            supportingText = amountError?.let { { Text(it) } },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("friend_amount_input_field")
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Friend Selection
+        Text(
+            text = if (loanDirection == FriendLoanDirection.LENT) "Who did you give money to?" else "Who did you borrow money from?",
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        val friendChips = if (friends.isNotEmpty()) friends.map { it.name } else suggestedFriends
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            friendChips.forEach { chipName ->
+                val isSelected = friendName.trim().equals(chipName.trim(), ignoreCase = true)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onFriendNameChange(chipName) },
+                    label = { Text(chipName) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isSelected) Icons.Default.Check else Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = friendName,
+            onValueChange = onFriendNameChange,
+            label = { Text("Friend's Name") },
+            placeholder = { Text("e.g. Rahul, Priya, Alex") },
+            isError = nameError != null,
+            supportingText = nameError?.let { { Text(it) } },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("friend_name_input_field")
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Payment Method (for Lent)
+        if (loanDirection == FriendLoanDirection.LENT) {
+            Text(
+                text = "Payment Method",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PaymentMethod.values().forEach { method ->
+                    val isSelected = paymentMethod == method
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onPaymentMethodChange(method) },
+                        label = { Text(method.name) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = when (method) {
+                                    PaymentMethod.CASH -> Icons.Default.Money
+                                    PaymentMethod.UPI -> Icons.Default.QrCode
+                                    PaymentMethod.CARD -> Icons.Default.CreditCard
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+        }
+
+        // Date & Time
+        Text(
+            text = "Date & Time",
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            cal.set(Calendar.YEAR, year)
+                            cal.set(Calendar.MONTH, month)
+                            cal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            onTimestampChange(cal.timeInMillis)
+                        },
+                        cal.get(Calendar.YEAR),
+                        cal.get(Calendar.MONTH),
+                        cal.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(imageVector = Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(dateFormat.format(Date(timestamp)), style = MaterialTheme.typography.bodySmall)
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
+                    TimePickerDialog(
+                        context,
+                        { _, hourOfDay, minute ->
+                            cal.set(Calendar.HOUR_OF_DAY, hourOfDay)
+                            cal.set(Calendar.MINUTE, minute)
+                            onTimestampChange(cal.timeInMillis)
+                        },
+                        cal.get(Calendar.HOUR_OF_DAY),
+                        cal.get(Calendar.MINUTE),
+                        false
+                    ).show()
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(imageVector = Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(timeFormat.format(Date(timestamp)), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Reason / Remarks
+        OutlinedTextField(
+            value = notes,
+            onValueChange = onNotesChange,
+            label = { Text("Reason / Remarks (Optional)") },
+            placeholder = { Text(if (loanDirection == FriendLoanDirection.LENT) "e.g. Emergency help, Shared cab" else "e.g. Needed for college fees") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Context Informational Card
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (loanDirection == FriendLoanDirection.LENT)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                else
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (loanDirection == FriendLoanDirection.LENT) Icons.Default.Handshake else Icons.Default.Info,
+                    contentDescription = null,
+                    tint = if (loanDirection == FriendLoanDirection.LENT) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = if (loanDirection == FriendLoanDirection.LENT) {
+                        "This will be deducted from your available funds and tracked in 'Who Owes Me'. When your friend repays, the amount will automatically be restored back to your available funds!"
+                    } else {
+                        "This will add money to your available funds as borrowed money from your friend."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Submit Button
+        Button(
+            onClick = onSave,
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (loanDirection == FriendLoanDirection.LENT)
+                    MaterialTheme.colorScheme.tertiary
+                else
+                    MaterialTheme.colorScheme.secondary,
+                contentColor = if (loanDirection == FriendLoanDirection.LENT)
+                    MaterialTheme.colorScheme.onTertiary
+                else
+                    MaterialTheme.colorScheme.onSecondary
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .testTag("save_friend_loan_button")
+        ) {
+            Icon(
+                imageVector = if (loanDirection == FriendLoanDirection.LENT) Icons.Default.Handshake else Icons.Default.Check,
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (loanDirection == FriendLoanDirection.LENT) "Record Money Lent" else "Record Borrowed Money",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            )
         }
     }
 }

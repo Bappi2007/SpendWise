@@ -42,5 +42,7 @@ data class MonthSummary(
     val monthlyBudget: Double,
     val budgetProgress: Float,
     val isOverBudget: Boolean,
-    val isMonthSpecificBudget: Boolean = false
+    val isMonthSpecificBudget: Boolean = false,
+    val isMonthlyLimitEnabled: Boolean = true,
+    val totalIncome: Double = 0.0
 )

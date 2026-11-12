@@ -18,6 +18,9 @@ interface ExpenseSplitDao {
     @Query("SELECT * FROM expense_splits WHERE expenseId = :expenseId")
     suspend fun getSplitsForExpenseSync(expenseId: String): List<ExpenseSplitEntity>
 
+    @Query("SELECT * FROM expense_splits WHERE id = :id LIMIT 1")
+    suspend fun getSplitById(id: String): ExpenseSplitEntity?
+
     @Query("SELECT * FROM expense_splits ORDER BY isPaid ASC, personName ASC")
     fun getAllSplits(): Flow<List<ExpenseSplitEntity>>
 

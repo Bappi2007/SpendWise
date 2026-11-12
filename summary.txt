@@ -1,0 +1,265 @@
+================================================================================
+SPENDWISE - APP SUMMARY & CHRONOLOGICAL FEATURE CHANGELOG
+================================================================================
+Application: SpendWise (v1.0)
+Type: Native Android Personal Finance & Expense Manager
+Architecture: Offline-First MVVM (Jetpack Compose, Room DB, Material 3, DataStore)
+Author & Developer: Bishal Mandal (bishalkumandal777@gmail.com)
+Tagline: "SpendWise v1.0 - Offline-first Jetpack Compose Room Database - Developed by Bishal Mandal"
+Privacy: 100% Offline, Zero Network Permissions (INTERNET permission NOT requested)
+================================================================================
+
+--------------------------------------------------------------------------------
+PART 1: CORE FEATURES IN THE FIRST (BASE) VERSION OF SPENDWISE v1.0
+--------------------------------------------------------------------------------
+The initial foundation of SpendWise provided a robust, privacy-first personal finance
+tracker built natively for Android using Kotlin and Jetpack Compose.
+
+1. Daily Transaction Logging & Tracking:
+   - Full transaction entry: Amount, Category selection, Custom Title/Merchant with autocomplete suggestions.
+   - Payment method tagging: Cash, UPI, and Card.
+   - Timestamp support: Defaults to current time with custom date and time picker dialogs.
+   - Optional remarks / notes field for context.
+
+2. Grouped Transaction Feed & Interactive Actions:
+   - Grouped daily timeline headers ("Today", "Yesterday", or formatted dates).
+   - Daily spending totals displayed in section headers.
+   - Swipe-to-delete with confirmation dialog and a 4-second interactive UNDO Snackbar.
+   - Tap-to-edit bottom sheet allowing immediate editing of any recorded transaction.
+   - Empty state illustration and helpful call-to-action when no transactions exist.
+
+3. Category Management:
+   - Seeded predefined categories: Food, Transport, Rent, Bills, Shopping, Health, Entertainment, Education, and Other.
+   - Custom category creator: Custom name, curated icon selector, and color palette.
+   - Category editing and deletion with safe reassignment: Deleting any category reassigns all past and future expenses to "Other", preserving total balances and audit history.
+
+4. Monthly Analytics & Data Visualizations (Bespoke Compose Canvas):
+   - Interactive Category Donut Chart: Custom sweep angles, center spend total, tap-to-inspect slices, and color legend.
+   - Daily Spending Bar Chart: Day-by-day bar visualization across the selected month with peak spend indicators.
+   - 6-Month Trend Line Chart: Smooth cubic Bezier curve displaying month-over-month trajectory with gradient underfill.
+   - Key Metrics: Total month spend, month-over-month percentage change (% MoM), daily average expenditure, and peak spending day.
+   - Month-over-month navigation controls (Previous / Next month stepper).
+   - Top spending categories breakdown with ranked progress bars.
+
+5. Legacy Monthly Budget Controller:
+   - Fixed monthly spending limit configuration.
+   - Quick increment/decrement steppers (-5k, -1k, +1k, +5k) and percentage scalers (-20%, -10%, +10%, +20%).
+   - Drag slider and preset benchmark chips (15k, 25k, 35k, 50k, 75k, 100k).
+   - Safe Daily Pace Calculator: (Remaining Budget / Days Left in Month) with status indicators.
+
+6. Settings & Preferences (Jetpack DataStore):
+   - Multi-currency support: Indian Rupee (INR), US Dollar (USD), Euro (EUR), British Pound (GBP), Japanese Yen (JPY).
+   - Theme mode selection: System Default, Forced Light, and Forced Dark.
+
+7. Privacy-Preserving SAF Backup & Restore:
+   - Zero storage permissions: Built on Android's Storage Access Framework (SAF).
+   - Versioned JSON file export (spendwise_backup_*.json).
+   - Schema validation and preview inspection (shows record count, date span, total amount before restoring).
+   - Two restore strategies: "Replace All Data" or "Merge (Skip Duplicates)".
+   - 30-day backup overdue banner alerting the user to protect their data.
+
+8. Spreadsheet Reports Export (CSV & Native Excel .xlsx):
+   - Custom export ranges: Current Month, Custom Date Range, or All-Time.
+   - RFC 4180-compliant CSV export with UTF-8 BOM (\uFEFF) for seamless opening in Excel/Google Sheets.
+   - Zero-dependency OpenXML SpreadsheetML ZIP generator producing genuine dual-sheet Excel (.xlsx) workbooks:
+     * Sheet 1: Formatted transactions table with formatted amounts and auto-fit columns.
+     * Sheet 2: Categorized summary table with totals and percentages.
+   - Instant file sharing via Android FileProvider and system share sheet.
+
+9. Sample Data Seeder:
+   - Initial utility to generate demo transactions and categories for testing purposes.
+
+
+--------------------------------------------------------------------------------
+PART 2: CHRONOLOGICAL RECORD OF FEATURES & CHANGES
+--------------------------------------------------------------------------------
+The application evolved through a series of focused feature requests, design overhauls,
+and bug fixes, recorded below in exact chronological order:
+
+================================================================================
+CHANGE 1: FRIENDS HUB & GROUP SPLIT EXPENSES
+================================================================================
+- Context & Motivation:
+  Users needed a way to split bills with friends, track who owes them money, and visualize
+  debt collections without needing a third-party server-based split app.
+- Key Additions:
+  * Friends Directory: Added Room `FriendEntity` and `FriendDao` allowing users to save,
+    add, and remove frequent friends with auto-suggest chips.
+  * Three Split Allocation Modes:
+    1. Equal Division: Evenly distributes the bill among selected friends.
+    2. Percentage Split: Custom percentage distribution per participant.
+    3. Manual Entry: Custom exact monetary values per participant.
+  * Debt & Settlement Tracking: Checkbox toggles to mark debts as "Settled" or "Pending".
+  * Who Owes Me Card: High-visibility dashboard card on the home screen showing total pending
+    receivables and per-friend debt breakdowns.
+  * Split Expenses Visual Graph: Custom Compose Canvas chart displaying individual friend debt
+    breakdowns and settled vs. pending ratios.
+
+================================================================================
+CHANGE 2: FLEXIBLE BUDGET CONTROLLER & INFLOW FUNDS TRACKER ("MY FUNDS")
+================================================================================
+- Context & Motivation:
+  Users requested moving away from rigid, predetermined monthly caps. Instead of an arbitrary
+  budget, users wanted to log real money they actually have or receive (e.g. from parents,
+  freelance income, or earnings) and spend against that pool.
+- Key Additions:
+  * Inflow Fund Tracking: Added Room `FundEntity` and `FundDao` to log funds with amount,
+    source/description (e.g. "From Parents", "Salary", "Freelance"), and timestamp.
+  * Live Available to Spend Balance: Dynamically calculates:
+    `Available to Spend = Total Funds Added - Month Spent`.
+  * Inflow Management: View fund history, add new funds on the fly, or delete past fund entries.
+
+================================================================================
+CHANGE 3: CALENDAR-BASED DATA RANGE CLEANUP (REPLACING SAMPLE DATA)
+================================================================================
+- Context & Motivation:
+  The user requested removing the mock sample data feature and replacing it with a
+  precise calendar range data deletion tool.
+- Key Additions:
+  * Removed the "Sample Data" generation buttons from Settings and Database seeders.
+  * Added Calendar Range Clear: Users pick "From Date" and "To Date" via interactive
+    Material 3 date pickers to permanently delete expenses within that exact span.
+  * Clear All Expenses: Full wipe action that resets all expense records while cleanly
+    preserving custom categories, saved friends, and user preferences.
+
+================================================================================
+CHANGE 4: DEVELOPER ATTRIBUTION IN SETTINGS
+================================================================================
+- Context & Motivation:
+  User requested branded attribution at the footer of the Settings screen.
+- Key Additions:
+  * Added official footer text to SettingsScreen.kt:
+    "SpendWise v1.0
+     Offline-first Jetpack Compose Room Database
+     Developed by Bishal Mandal"
+
+================================================================================
+CHANGE 5: TOGGLEABLE MONTHLY SPENDING LIMIT (ON / OFF SWITCH)
+================================================================================
+- Context & Motivation:
+  Users requested the freedom to toggle the fixed monthly spending limit ON or OFF.
+- Key Additions:
+  * Added `isMonthlyLimitEnabled` boolean preference to `UserPreferencesRepository` (DataStore).
+  * Integrated an ON/OFF switch in the Budget Manipulation sheet and Settings.
+  * When OFF: Safe daily pace calculations and restrictive spending ceilings are disabled,
+    allowing users to operate purely on their available income funds.
+  * When ON: Steppers, slider, presets, and daily safe pace metrics remain active.
+
+================================================================================
+CHANGE 6: POST-WIPE ₹0 BUDGET RESET & HOME DASHBOARD INFLOW FUNDS FEED
+================================================================================
+- Context & Motivation:
+  After clearing all expenses, the app previously fell back to a default ₹25,000 budget.
+  The user requested that clearing all expenses without funds should show ₹0 available,
+  and added funds should appear directly in the main dashboard alongside transactions.
+- Key Additions:
+  * Reset logic: After clearing expenses, when no funds are logged, available balance shows ₹0.
+  * Inflow Funds in Feed: Inflow transactions (funds received from parents/earnings) now appear
+    directly in the Home Screen's chronological transaction timeline.
+  * Visual distinction: Inflow items display a mint green badge, "+" prefix, and source label,
+    with daily headers reflecting net daily flow (Inflow vs. Outflow).
+
+================================================================================
+CHANGE 7: COMPLETE MATERIAL 3 UI/UX REDESIGN (EXECUTIVE BRAND PALETTE)
+================================================================================
+- Context & Motivation:
+  Comprehensive redesign across all screens to modernize UI/UX, establish a consistent
+  executive identity, enforce strict WCAG AA contrast rules, and standardize an 8dp grid.
+- Key Additions:
+  * Strict Brand Color Palette:
+    - Primary (#0171DF - Royal Blue): Headers, primary action fills, active tab indicators (with white text/icons).
+    - Secondary (#3CAE8B - Mint Green): Positive funds, health indicators, settled debts (STRICTLY paired with #121660 text/icons for contrast).
+    - Tertiary (#FFD140 - Warm Yellow): Floating Action Button (FAB), "Add Money" CTA pill, warning tags (STRICTLY paired with #121660 text/icons).
+    - Deep Navy (#121660): Primary text on light surfaces, top app bar background, dark theme surface base.
+    - Disabled Dynamic Theming: Custom M3 ColorSchemes (Light surface: #F4F8FC, Dark surfaces: #080A1F / #0E1235).
+  * Design Tokens: `SpendWiseSpacing` 8dp grid (xs: 4dp, sm: 8dp, md: 16dp, lg: 24dp, xl: 32dp).
+  * Screen Redesigns:
+    - MainActivity: Custom NavigationBar with active pill indicator and smooth 220ms crossfade transitions.
+    - HomeScreen: Deep Navy-to-Royal Blue gradient hero card, high-contrast "Add Money" CTA, Who Owes Me split card, and grouped daily cards.
+    - BudgetManipulationSheet: Styled dual-tab interface ("Available Funds" vs "Monthly Limit"), steppers, percentage chips, and fluid simulator.
+    - AddExpenseBottomSheet: High-contrast category selector chips, payment method segmented controls, and friend split allocations.
+    - CategoriesScreen & SettingsScreen: Elevated cards, consistent padding, and 48dp minimum touch targets.
+
+================================================================================
+CHANGE 8: COMPREHENSIVE DOCUMENTATION UPDATE (README.MD)
+================================================================================
+- Context & Motivation:
+  User requested updating `README.md` to reflect all architectural advancements and features.
+- Key Additions:
+  * Completely rewrote `README.md` detailing the Split Hub, Funds Tracker, Calendar Wipe,
+    Executive Material 3 Design System, Architecture diagram, Test Suites, and author attribution.
+
+================================================================================
+CHANGE 9: BRANDED ADAPTIVE LAUNCHER ICON REBRANDING
+================================================================================
+- Context & Motivation:
+  User requested locating icon paths and updating the launcher icon to match the new brand theme.
+- Key Additions:
+  * Identified launcher paths in `app/src/main/res/mipmap-*` and `app/src/main/res/drawable/`.
+  * Created vector adaptive icon:
+    - Background: `ic_launcher_background.xml` (Deep Navy #121660 to Royal Blue #0171DF linear gradient).
+    - Foreground: `ic_launcher_foreground.xml` (White wallet base, Mint Green #3CAE8B flap, Warm Yellow #FFD140 clasp, and growth trendline).
+  * Rendered high-resolution 32-bit RGBA PNG launcher assets (`ic_launcher.png` and `ic_launcher_round.png`)
+    across all Android densities: mdpi (48px), hdpi (72px), xhdpi (96px), xxhdpi (144px), and xxxhdpi (192px).
+  * Deleted legacy green WebP icons.
+
+================================================================================
+CHANGE 10: DYNAMIC INCOME-BASED MONTHLY BUDGET IN ANALYSIS SECTION
+================================================================================
+- Context & Motivation:
+  When the monthly spending limit was toggled OFF, adding income caused the Analysis
+  screen to show "Budget Exceeded!" because it was comparing spending against a 0.0 or legacy cap.
+- Solution Implemented:
+  * Updated `MonthSummary` (in `AnalysisModels.kt`) to include `isMonthlyLimitEnabled: Boolean`
+    and `totalIncome: Double`.
+  * Updated `ExpenseRepository.kt`: When `isMonthlyLimitEnabled == false`, `effectiveBudget`
+    is automatically calculated as `totalIncome` (funds added during that month or all-time funds).
+    `isOverBudget` is only triggered if spending exceeds actual total income.
+  * Updated `AnalysisViewModel.kt`: Added `fundDao` observation into `combine(...)` so logging
+    or deleting income reactively recalculates and updates the monthly summary.
+  * Updated `AnalysisScreen.kt`: The Monthly Budget Card displays "Monthly Income Budget"
+    and shows "Spent: ₹X" vs "Total Income: ₹Y" with positive health meters.
+  * Added Robolectric unit test in `FundsAndFriendsTest.kt`:
+    `when monthly limit is disabled month summary calculates budget according to total income`.
+
+================================================================================
+CHANGE 11: DEDICATED FRIEND MONEY LENDING & BORROWING WITH AUTO-FUND RESTORATION
+================================================================================
+- Context & Motivation:
+  Users needed a dedicated, seamless way to track money given as loans to friends or
+  borrowed from friends directly from the primary Add sheet, deduct lent money from
+  available funds until repaid, and automatically restore the balance when repaid.
+- Key Additions:
+  * Add Sheet Mode Selector: Added a top TabRow switch ("Regular Expense" vs "Lend / Borrow")
+    in AddExpenseBottomSheet with dedicated loan direction pills ("I Lent Money" vs "I Borrowed").
+  * Friend Selection & Directory: Fast friend picker chips with instant selection, inline
+    friend name entry, amount with currency prefix, payment method (Cash, UPI, Card), and remarks.
+  * Informational Context Cards: Explains financial impact clearly in Material 3 styling.
+  * Direct Money Lent Outflow:
+    - Automatically creates the transaction under the dedicated "Money Lent" category (`cat_default_money_lent`).
+    - Atomically creates an unpaid debt record in `ExpenseSplitEntity` linked to the friend.
+    - Immediately reduces current available funds (`Available = Funds - Spent`) and tracks
+      the debt inside the "Who Owes Me & Split Hub".
+  * Automated Repayment & Fund Balance Restoration:
+    - When the friend pays back and the debt is marked as "Settled", SpendWise automatically
+      generates an inflow `FundEntity` (`id = "repay_split_${split.id}"`, title: "Repayment from [Friend]")
+      which immediately adds the money back into available funds!
+    - Emits a confirmation Snackbar with an interactive 4-second **UNDO** action.
+    - If unmarked as paid or undone, the repayment fund is cleanly removed and balance restored.
+  * Borrowed Money Inflow:
+    - "I Borrowed" mode records an inflow fund entry (`FundEntity`), instantly increasing available funds.
+  * Visual Badges:
+    - Transactions feed on Home Screen displays dedicated "Lent to [Friend] • Awaiting Repayment"
+      and "Lent to [Friend] • Repaid" status badges with the Handshake icon.
+  * Automated Test Suite: Added Robolectric test in `FundsAndFriendsTest.kt`:
+    `when money is lent to friend and repaid, available funds decreases then automatically restores`.
+
+================================================================================
+CURRENT STATUS & QUALITY ASSURANCE
+================================================================================
+- Android Compilation (`compile_applet`): BUILD SUCCEEDED with 0 errors.
+- Automated Test Suite (`gradle :app:testDebugUnitTest`): 33 actionable tasks executed,
+  100% of unit and Robolectric tests passing.
+- Privacy & Permissions: Zero network permissions, 100% offline Room database.
+================================================================================
+

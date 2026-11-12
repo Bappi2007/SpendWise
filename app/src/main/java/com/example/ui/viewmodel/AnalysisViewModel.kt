@@ -3,6 +3,7 @@ package com.example.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.data.model.FundEntity
 import com.example.data.model.MonthSummary
 import com.example.data.preferences.UserPreferences
 import com.example.data.repository.ExpenseRepository
@@ -33,18 +34,26 @@ class AnalysisViewModel(
             initialValue = UserPreferences()
         )
 
+    val allFunds: StateFlow<List<FundEntity>> = repository.allFunds
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     private val _monthSummary = MutableStateFlow<MonthSummary?>(null)
     val monthSummary: StateFlow<MonthSummary?> = _monthSummary.asStateFlow()
 
     init {
-        // Reactively recompute summary when year, month, expenses or preferences update
+        // Reactively recompute summary when year, month, expenses, funds (income), or preferences update
         viewModelScope.launch {
             combine(
                 _selectedYear,
                 _selectedMonth,
                 repository.allExpensesWithCategory,
+                repository.allFunds,
                 userPreferences
-            ) { year, month, _, prefs ->
+            ) { year, month, _, _, prefs ->
                 Triple(year, month, prefs.monthlyBudget)
             }.collect { (year, month, budget) ->
                 refreshSummary(year, month, budget)
@@ -104,6 +113,21 @@ class AnalysisViewModel(
     fun setMonthlyLimitEnabled(enabled: Boolean) {
         viewModelScope.launch {
             repository.setMonthlyLimitEnabled(enabled)
+        }
+    }
+
+    fun addFund(title: String, amountText: String, source: String, notes: String? = null) {
+        val amount = amountText.toDoubleOrNull() ?: return
+        if (amount <= 0) return
+        val displayTitle = if (title.isBlank()) source else title
+        viewModelScope.launch {
+            repository.insertFund(displayTitle, amount, source, notes = notes)
+        }
+    }
+
+    fun deleteFund(fund: FundEntity) {
+        viewModelScope.launch {
+            repository.deleteFund(fund)
         }
     }
 }

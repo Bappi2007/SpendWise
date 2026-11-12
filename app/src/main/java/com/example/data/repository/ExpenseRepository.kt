@@ -15,6 +15,7 @@ import com.example.data.model.FriendEntity
 import com.example.data.model.FundEntity
 import com.example.data.model.MonthSummary
 import com.example.data.model.MonthlyTrend
+import com.example.data.model.PaymentMethod
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.seeder.SampleDataSeeder
@@ -98,9 +99,103 @@ class ExpenseRepository(
         }
     }
 
-    suspend fun setSplitPaidStatus(splitId: String, isPaid: Boolean) {
+    suspend fun setSplitPaidStatus(splitId: String, isPaid: Boolean): ExpenseSplitEntity? {
         val settledTime = if (isPaid) System.currentTimeMillis() else null
         expenseSplitDao?.setPaidStatus(splitId, isPaid, settledTime)
+        val split = expenseSplitDao?.getSplitById(splitId)
+        if (split != null && fundDao != null) {
+            val repaymentFundId = "repay_split_${split.id}"
+            if (isPaid) {
+                val fund = FundEntity(
+                    id = repaymentFundId,
+                    title = "Repayment from ${split.personName}",
+                    amount = split.allocatedAmount,
+                    source = "Friend Repayment",
+                    timestamp = System.currentTimeMillis(),
+                    notes = "Auto-added from settled friend debt"
+                )
+                fundDao.insertFund(fund)
+            } else {
+                fundDao.deleteFundById(repaymentFundId)
+            }
+        }
+        return split
+    }
+
+    suspend fun lendMoneyToFriend(
+        friendName: String,
+        amount: Double,
+        paymentMethod: PaymentMethod,
+        notes: String?,
+        timestamp: Long = System.currentTimeMillis()
+    ): Pair<ExpenseEntity, ExpenseSplitEntity> {
+        val trimmedName = friendName.trim()
+        if (friendDao != null) {
+            val existing = friendDao.getFriendByName(trimmedName)
+            if (existing == null) {
+                friendDao.insertFriend(FriendEntity(name = trimmedName))
+            }
+        }
+
+        val lentCategory = categoryDao.getCategoryById(SampleDataSeeder.CATEGORY_LENT_ID)
+            ?: categoryDao.getCategoryByName("Money Lent")
+            ?: run {
+                val fallbackLent = CategoryEntity(
+                    id = SampleDataSeeder.CATEGORY_LENT_ID,
+                    name = "Money Lent",
+                    iconKey = "money_lent",
+                    colorHex = 0xFF0171DF,
+                    isDefault = true,
+                    sortOrder = 9
+                )
+                categoryDao.insertCategory(fallbackLent)
+                fallbackLent
+            }
+
+        val expense = ExpenseEntity(
+            title = "Lent to $trimmedName",
+            amount = amount,
+            categoryId = lentCategory.id,
+            timestamp = timestamp,
+            paymentMethod = paymentMethod.name,
+            notes = notes?.trim()?.ifEmpty { null }
+        )
+
+        val split = ExpenseSplitEntity(
+            expenseId = expense.id,
+            personName = trimmedName,
+            allocatedAmount = amount,
+            percentage = 100.0,
+            isPaid = false,
+            settledTimestamp = null
+        )
+
+        saveExpenseWithSplits(expense, listOf(split))
+        return Pair(expense, split)
+    }
+
+    suspend fun borrowMoneyFromFriend(
+        friendName: String,
+        amount: Double,
+        notes: String?,
+        timestamp: Long = System.currentTimeMillis()
+    ): FundEntity {
+        val trimmedName = friendName.trim()
+        if (friendDao != null) {
+            val existing = friendDao.getFriendByName(trimmedName)
+            if (existing == null) {
+                friendDao.insertFriend(FriendEntity(name = trimmedName))
+            }
+        }
+        val fund = FundEntity(
+            title = "Borrowed from $trimmedName",
+            amount = amount,
+            source = "Friend Loan",
+            timestamp = timestamp,
+            notes = notes?.trim()?.ifEmpty { null }
+        )
+        fundDao?.insertFund(fund)
+        return fund
     }
 
     suspend fun getSplitsForExpense(expenseId: String): List<ExpenseSplitEntity> =
@@ -222,11 +317,23 @@ class ExpenseRepository(
             )
         }.sortedByDescending { it.totalAmount }
 
+        val isLimitEnabled = prefs.isMonthlyLimitEnabled
         val monthBudgetKey = com.example.data.preferences.UserPreferencesRepository.formatYearMonthKey(year, month)
         val monthBudgets = prefs.monthBudgets
         val specificMonthBudget = monthBudgets[monthBudgetKey]
-        val effectiveBudget = specificMonthBudget ?: monthlyBudget
-        val isMonthSpecific = specificMonthBudget != null
+
+        // Fetch income/funds for the month (fallback to all funds if none in this month)
+        val monthIncome = fundDao?.getFundsAmountInRange(startCurrent, endCurrent) ?: 0.0
+        val allIncome = fundDao?.getTotalFundsAmountSync() ?: 0.0
+        val totalIncome = if (monthIncome > 0) monthIncome else allIncome
+
+        // When monthly limit is off, calculate the monthly budget according to total income
+        val effectiveBudget = if (isLimitEnabled) {
+            specificMonthBudget ?: monthlyBudget
+        } else {
+            totalIncome
+        }
+        val isMonthSpecific = isLimitEnabled && specificMonthBudget != null
 
         val monthlyTrends = mutableListOf<MonthlyTrend>()
         val trendCal = Calendar.getInstance().apply {
@@ -270,6 +377,12 @@ class ExpenseRepository(
             0f
         }
 
+        val isOverBudget = if (effectiveBudget > 0) {
+            totalSpent > effectiveBudget
+        } else {
+            false
+        }
+
         return MonthSummary(
             year = year,
             month = month,
@@ -285,8 +398,10 @@ class ExpenseRepository(
             monthlyTrends = monthlyTrends,
             monthlyBudget = effectiveBudget,
             budgetProgress = budgetProgress,
-            isOverBudget = totalSpent > effectiveBudget,
-            isMonthSpecificBudget = isMonthSpecific
+            isOverBudget = isOverBudget,
+            isMonthSpecificBudget = isMonthSpecific,
+            isMonthlyLimitEnabled = isLimitEnabled,
+            totalIncome = totalIncome
         )
     }
 

@@ -72,6 +72,7 @@ fun AnalysisScreen(
 ) {
     var isBudgetSheetVisible by remember { mutableStateOf(false) }
     val userPrefs by viewModel.userPreferences.collectAsStateWithLifecycle()
+    val allFunds by viewModel.allFunds.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -273,7 +274,14 @@ fun AnalysisScreen(
             categories = categories,
             categorySpendings = summary.categoryBreakdowns,
             categoryBudgets = userPrefs.categoryBudgets,
+            funds = allFunds,
             isMonthlyLimitEnabled = userPrefs.isMonthlyLimitEnabled,
+            onAddFund = { title, amountText, source, notes ->
+                viewModel.addFund(title, amountText, source, notes)
+            },
+            onDeleteFund = { fund ->
+                viewModel.deleteFund(fund)
+            },
             onToggleMonthlyLimit = { enabled ->
                 viewModel.setMonthlyLimitEnabled(enabled)
             },
@@ -486,6 +494,17 @@ fun MonthlyBudgetCard(
     currencySymbol: String,
     onAdjustBudget: () -> Unit
 ) {
+    val isLimitEnabled = summary.isMonthlyLimitEnabled
+    val cardTitle = if (isLimitEnabled) {
+        if (summary.isOverBudget) "Budget Exceeded!" else "Monthly Budget Goal"
+    } else {
+        if (summary.isOverBudget) "Income Exceeded!"
+        else if (summary.monthlyBudget > 0) "Monthly Income Budget"
+        else "No Income Added"
+    }
+
+    val titleColor = if (summary.isOverBudget) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -513,9 +532,9 @@ fun MonthlyBudgetCard(
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
-                        text = if (summary.isOverBudget) "Budget Exceeded!" else "Monthly Budget Goal",
+                        text = cardTitle,
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = if (summary.isOverBudget) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        color = titleColor
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
@@ -530,7 +549,7 @@ fun MonthlyBudgetCard(
                             Icon(imageVector = Icons.Default.Tune, contentDescription = "Adjust", modifier = Modifier.size(11.dp))
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = "Adjust",
+                                text = if (isLimitEnabled) "Adjust" else "Manage Funds",
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -538,8 +557,14 @@ fun MonthlyBudgetCard(
                     }
                 }
 
+                val progressText = if (!isLimitEnabled && summary.monthlyBudget == 0.0) {
+                    "No Limit"
+                } else {
+                    "${(summary.budgetProgress * 100).toInt()}%"
+                }
+
                 Text(
-                    text = "${(summary.budgetProgress * 100).toInt()}%",
+                    text = progressText,
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                     color = if (summary.isOverBudget) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 )
@@ -575,7 +600,11 @@ fun MonthlyBudgetCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "Budget: $currencySymbol${String.format(Locale.US, "%,.0f", summary.monthlyBudget)}",
+                    text = if (isLimitEnabled) {
+                        "Budget: $currencySymbol${String.format(Locale.US, "%,.0f", summary.monthlyBudget)}"
+                    } else {
+                        "Total Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.monthlyBudget)}"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

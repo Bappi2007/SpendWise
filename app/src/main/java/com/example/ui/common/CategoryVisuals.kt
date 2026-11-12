@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.LocalCafe
@@ -46,6 +47,7 @@ object CategoryVisuals {
         "gift" to Icons.Default.CardGiftcard,
         "fitness" to Icons.Default.FitnessCenter,
         "tech" to Icons.Default.Laptop,
+        "money_lent" to Icons.Default.Handshake,
         "other" to Icons.Default.Category
     )
 

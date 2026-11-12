@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Money
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Tune
@@ -325,6 +326,12 @@ fun HomeScreen(
                         splits
                     )
                 }
+            },
+            onLendMoney = { friendName, amountText, paymentMethod, notes, timestamp ->
+                viewModel.lendMoneyToFriend(friendName, amountText, paymentMethod, notes, timestamp)
+            },
+            onBorrowMoney = { friendName, amountText, notes, timestamp ->
+                viewModel.borrowMoneyFromFriend(friendName, amountText, notes, timestamp)
             }
         )
     }
@@ -1026,6 +1033,7 @@ fun ExpenseRowCard(
                 // Split Badge if expense is split
                 if (item.isSplit) {
                     Spacer(modifier = Modifier.height(4.dp))
+                    val isLoan = item.categoryName == "Money Lent" || item.categoryIconKey == "money_lent"
                     val isFullySettled = item.pendingSplitsCount == 0
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -1037,17 +1045,20 @@ fun ExpenseRowCard(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CallSplit,
+                                imageVector = if (isLoan) Icons.Default.Handshake else Icons.Default.CallSplit,
                                 contentDescription = null,
                                 modifier = Modifier.size(12.dp),
                                 tint = if (isFullySettled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isFullySettled) {
-                                    "Split (${item.splits.size}) • Settled"
+                                text = if (isLoan) {
+                                    val friendName = item.splits.firstOrNull()?.personName ?: "Friend"
+                                    if (isFullySettled) "Lent to $friendName • Repaid"
+                                    else "Lent to $friendName • Awaiting Repayment ($currencySymbol${String.format(Locale.US, "%,.0f", item.pendingAmountToReceive)})"
                                 } else {
-                                    "Split (${item.splits.size}) • ${item.pendingSplitsCount} unpaid ($currencySymbol${String.format(Locale.US, "%,.0f", item.pendingAmountToReceive)})"
+                                    if (isFullySettled) "Split (${item.splits.size}) • Settled"
+                                    else "Split (${item.splits.size}) • ${item.pendingSplitsCount} unpaid ($currencySymbol${String.format(Locale.US, "%,.0f", item.pendingAmountToReceive)})"
                                 },
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
                                 color = if (isFullySettled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
