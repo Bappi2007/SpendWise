@@ -2,7 +2,7 @@
 
 > A modern, privacy-first native Android personal finance & expense manager built with **Kotlin**, **Jetpack Compose**, **Material 3**, and **Room Database**.
 
-SpendWise operates 100% offline with **zero network permissions**, keeping all financial transactions, fund inflows, and friend debt settlements securely on your device. It provides interactive data visualizations, group expense splitting, flexible budget controller with fund tracking, calendar-based data management, local JSON backups via Android's Storage Access Framework (SAF), and spreadsheet exports (CSV & Excel `.xlsx`).
+SpendWise operates 100% offline with **zero network permissions**, keeping all financial transactions, fund inflows, and friend debt settlements securely on your device. It provides interactive data visualizations, group expense splitting, dedicated friend loan tracking with automated repayment fund restoration, a flexible budget controller with fund tracking, calendar-based data management, local JSON backups via Android's Storage Access Framework (SAF), and spreadsheet exports (CSV & native Excel `.xlsx`).
 
 ---
 
@@ -25,10 +25,10 @@ SpendWise operates 100% offline with **zero network permissions**, keeping all f
 ### 2. 👥 Split Expenses, Friend Loans & Friends Hub
 - **Dedicated Friend Money Lending & Borrowing**:
   - Log money lent to friends or borrowed from friends directly in the primary Add bottom sheet via the top **"Lend / Borrow"** mode switch.
-  - **Lending Flow**: Automatically categorizes as "Money Lent", tracks the unpaid debt in *Who Owes Me*, and deducts from your available funds until the friend repays.
-  - **Automated Repayment & Fund Balance Restoration**: When a friend repays and you mark the debt as settled, SpendWise automatically generates an inflow fund entry (`"Repayment from [Friend]"`) that immediately restores the money back into your available balance, accompanied by a confirmation Snackbar with **UNDO** support.
+  - **Lending Flow**: Automatically categorizes as *"Money Lent"* (`cat_default_money_lent` with Handshake icon), creates an unpaid debt record in *Who Owes Me*, and deducts the amount from your available funds until the friend repays.
+  - **Automated Repayment & Fund Balance Restoration**: When a friend repays and you mark the debt as settled (via the *Who Owes Me* card, *Split Hub*, or transaction details), SpendWise automatically generates an inflow fund entry (`"Repayment from [Friend]"`) that immediately restores the money back into your available balance, accompanied by a confirmation Snackbar with **UNDO** support.
   - **Borrowing Flow**: Log money borrowed from friends, instantly adding the received funds into your available spending balance.
-- **Group Splitting**: Split any expense among friends with one tap directly inside the expense creation sheet or settlement hub.
+- **Group Bill Splitting**: Split any expense among friends with one tap directly inside the expense creation sheet or settlement hub.
 - **Three Division Modes**:
   - **Equal Division**: Splits the total equally among all selected participants.
   - **Percentage Split**: Custom percentage allocations per friend.
@@ -54,6 +54,7 @@ SpendWise operates 100% offline with **zero network permissions**, keeping all f
 
 ### 4. 📊 Monthly Analytics & Data Visualization
 - **Month-over-Month Navigation**: Effortlessly step through past and upcoming months with `←` and `→` controls.
+- **Dynamic Income-Based Budget**: When the monthly limit toggle is switched **OFF**, monthly budget targets are automatically derived from total income (added funds), accurately showing healthy progress rather than flagging a false *"Budget Exceeded"* state.
 - **Key Financial Metrics**: Monthly total spend, month-over-month percentage change (`%`) badge, daily average expenditure, and peak spend day.
 - **Category Donut Chart**: Compose Canvas donut chart with animated sweep angles, central total display, slice tap selection, and legend breakdown.
 - **Daily Spending Bar Chart**: Visualizes day-by-day expenditure across the month with weekend indicators and peak day highlight.
@@ -61,13 +62,13 @@ SpendWise operates 100% offline with **zero network permissions**, keeping all f
 - **Top Categories Breakdown**: Ranked list with proportional progress indicators and transaction counts.
 
 ### 5. 🏷️ Category Management
-- **Predefined Categories**: Seeded defaults (*Food*, *Transport*, *Rent*, *Bills*, *Shopping*, *Health*, *Entertainment*, *Education*, and *Other*), each with distinct icons and colors.
+- **Predefined Categories**: Seeded defaults (*Food*, *Transport*, *Rent*, *Bills*, *Shopping*, *Health*, *Entertainment*, *Education*, *Money Lent*, and *Other*), each with distinct icons and colors.
 - **Custom Categories**: Create, edit, and color-code custom categories from a curated icon set and color palette.
 - **Safe Reassignment**: Deleting any category automatically reassigns all past and future expenses to *"Other"*, keeping historical balances intact.
 
 ### 6. 📅 Calendar Range Data Management
 - **Clear Specific Date Range**: Select "From" and "To" dates via calendar dialogs to permanently delete expenses within that range without wiping categories or custom funds.
-- **Clear All Expenses**: One-tap full wipe for expense records while cleanly preserving user categories and preferences.
+- **Clear All Expenses**: One-tap full wipe for expense records while cleanly preserving user categories, saved friends, and preferences.
 
 ### 7. 💾 Storage Access Framework (SAF) Backup & Restore
 - **Privacy-First**: No storage permissions required. Uses Android's Storage Access Framework (`CreateDocument` / `OpenDocument`).
@@ -92,6 +93,7 @@ SpendWise operates 100% offline with **zero network permissions**, keeping all f
   - **Tertiary (`#FFD140`)**: Warm Yellow for Floating Action Buttons (FAB), "Add Money" CTA pills, and warning thresholds (strictly paired with `#121660` text).
   - **Deep Navy (`#121660`)**: Anchors primary text on light backgrounds and top app bars, and serves as the dark surface baseline.
 - **Theming Modes**: Supports System Default, Forced Light (`#F4F8FC` surface), and Forced Dark (`#080A1F` / `#0E1235` surfaces) with dynamic color disabled for brand consistency.
+- **Custom Adaptive Launcher Icon**: Branded vector adaptive icon featuring a Deep Navy-to-Royal Blue gradient background with a white wallet, mint green flap, golden clasp, and growth trendline, pre-rendered across all screen densities (`mdpi` through `xxxhdpi`) in standard and round formats.
 - **Accessibility**: All interactive targets are at least 48dp with semantic content descriptions and smooth transitions under 300ms.
 
 ---
@@ -120,9 +122,9 @@ app/src/main/java/com/example/
 │   ├── model/
 │   │   ├── CategoryEntity.kt        # Room entity for categories
 │   │   ├── ExpenseEntity.kt         # Room entity for transactions
-│   │   ├── ExpenseSplitEntity.kt    # Room entity for friend split debts
+│   │   ├── ExpenseSplitEntity.kt    # Room entity for friend split debts & loans
 │   │   ├── FriendEntity.kt          # Room entity for saved friends directory
-│   │   ├── FundEntity.kt            # Room entity for received funds / inflows
+│   │   ├── FundEntity.kt            # Room entity for received funds / inflows / repayments
 │   │   ├── ExpenseWithCategory.kt   # Composite Room relation model (expenses + splits)
 │   │   ├── PaymentMethod.kt         # Cash, UPI, Card enum
 │   │   ├── SplitAllocationMode.kt   # Equal, Percentage, Manual split modes
@@ -130,9 +132,9 @@ app/src/main/java/com/example/
 │   ├── dao/
 │   │   ├── CategoryDao.kt           # Category queries and reassignment logic
 │   │   ├── ExpenseDao.kt            # Transaction queries and date range filters
+│   │   ├── ExpenseSplitDao.kt       # Split expense debt entries & settlement queries
 │   │   ├── FriendDao.kt             # Saved friend contacts
-│   │   ├── FundDao.kt               # Received fund inflow records
-│   │   └── SplitDao.kt              # Split expense debt entries & settlement queries
+│   │   └── FundDao.kt               # Received fund inflow & repayment records
 │   ├── database/
 │   │   └── SpendWiseDatabase.kt     # Room database definition with schema migrations
 │   ├── preferences/
@@ -140,7 +142,7 @@ app/src/main/java/com/example/
 │   ├── seeder/
 │   │   └── SampleDataSeeder.kt      # Predefined categories seeding
 │   ├── repository/
-│   │   └── ExpenseRepository.kt     # Central repository for metrics, funds, and splits
+│   │   └── ExpenseRepository.kt     # Central repository for metrics, funds, splits, and loans
 │   ├── backup/
 │   │   └── BackupRestoreManager.kt  # JSON serialization, schema validation, and restore
 │   └── export/
@@ -153,7 +155,7 @@ app/src/main/java/com/example/
     │   ├── Charts.kt                # Canvas DonutChart, DailyBarChart, and TrendLineChart
     │   └── SplitExpenseGraph.kt     # Visual chart for split debts and settlements
     ├── components/
-    │   ├── AddExpenseBottomSheet.kt # Expense entry modal with friend split allocation
+    │   ├── AddExpenseBottomSheet.kt # Expense & friend loan entry modal with split allocation
     │   └── BudgetManipulationSheet.kt # Inflow fund tracker, monthly limit, & pace simulator
     ├── screens/
     │   ├── HomeScreen.kt            # Summary card, who owes me card, grouped transactions feed
@@ -165,7 +167,7 @@ app/src/main/java/com/example/
     │   ├── Theme.kt                 # Material 3 light/dark color schemes & spacing tokens
     │   └── Type.kt                  # Modern typography definitions
     └── viewmodel/
-        ├── ExpenseViewModel.kt      # Transactions, funds, friend splits, and undo state
+        ├── ExpenseViewModel.kt      # Transactions, funds, friend splits, loans, and undo state
         ├── AnalysisViewModel.kt     # Reactive monthly summary and navigation
         └── SettingsViewModel.kt     # Preferences, backup streams, and report generation
 ```
@@ -174,7 +176,7 @@ app/src/main/java/com/example/
 
 ## 🧪 Testing
 
-The test suite validates Room database persistence, mathematical aggregations, split allocations, fund balances, backup serialization round-trips, and CSV RFC 4180 escaping:
+The test suite validates Room database persistence, mathematical aggregations, split allocations, fund balances, friend loans with automatic balance restoration, backup serialization round-trips, and CSV RFC 4180 escaping:
 
 ```bash
 # Run all unit and Robolectric tests via Gradle
@@ -182,7 +184,7 @@ gradle :app:testDebugUnitTest
 ```
 
 ### Key Test Suites:
-- `FundsAndFriendsTest`: Tests inflow fund additions, available balance math, friend management, and split expense allocation modes.
+- `FundsAndFriendsTest`: Tests inflow fund additions, available balance math, friend management, split expense allocation modes, and **friend money lending with automatic fund restoration upon settlement**.
 - `BudgetManipulationTest`: Tests stepper bounds, percentage scaling, and daily safe allowance calculations.
 - `CsvEscapingTest`: Validates RFC 4180 quoting, double-quote escaping, multiline notes, and UTF-8 BOM prepending.
 - `BackupSerializationTest`: Validates JSON schema compliance, preview metadata extraction, and corrupt file detection.
@@ -237,3 +239,4 @@ To sign the APK with your own production key:
 SpendWise requires **NO runtime permissions** and **NO network permissions**:
 - `<uses-permission android:name="android.permission.INTERNET" />` is **NOT** declared.
 - File exports and backups use the Android **Storage Access Framework** and **FileProvider**, ensuring zero access to private external storage.
+- All application data is stored in the app's private, sandboxed SQLite database at `/data/user/0/<application_id>/databases/spendwise_database`.
