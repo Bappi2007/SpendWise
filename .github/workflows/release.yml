@@ -1,0 +1,210 @@
+name: SpendWise Automatic GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish SpendWise APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine release version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ inputs.tag_name }}"
+          else
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: ${TAG_NAME}"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Prepare environment configuration
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example .env || touch .env
+          fi
+
+      - name: Prepare debug signing keystore
+        run: |
+          if [ -f debug.keystore ]; then
+            echo "Using existing debug.keystore"
+          elif [ -f debug.keystore.base64 ]; then
+            echo "Decoding debug.keystore from debug.keystore.base64..."
+            base64 --decode debug.keystore.base64 > debug.keystore
+          else
+            echo "Generating standard Android debug.keystore..."
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -noprompt
+          fi
+
+      - name: Prepare release signing keystore
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || 'android' }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: |
+          mkdir -p app
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding production release keystore from GitHub Secrets..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/release-key.jks
+            echo "signed_mode=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::SIGNING_KEYSTORE_BASE64 secret is not configured. Generating a temporary self-signed release keystore so the release APK can be installed on Android devices."
+            keytool -genkeypair -v \
+              -keystore app/release-key.jks \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "$STORE_PASS" \
+              -keypass "$KEY_PASS" \
+              -dname "CN=SpendWise, OU=Mobile, O=SpendWise, L=Kolkata, S=WB, C=IN" \
+              -noprompt
+            echo "signed_mode=temporary" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Debug and Release APKs
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/app/release-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+
+      - name: Verify APK outputs and prepare release assets
+        id: assets
+        run: |
+          TAG="${{ steps.version.outputs.tag_name }}"
+          mkdir -p release-assets
+
+          RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 2 -name "*.apk" | head -n 1)
+          DEBUG_APK=$(find app/build/outputs/apk/debug -maxdepth 2 -name "*.apk" | head -n 1)
+
+          if [ -z "$RELEASE_APK" ] || [ ! -f "$RELEASE_APK" ]; then
+            echo "::error::Release APK was not found in app/build/outputs/apk/release/"
+            exit 1
+          fi
+
+          if [ -z "$DEBUG_APK" ] || [ ! -f "$DEBUG_APK" ]; then
+            echo "::error::Debug APK was not found in app/build/outputs/apk/debug/"
+            exit 1
+          fi
+
+          RELEASE_ASSET="SpendWise-${TAG}-release.apk"
+          DEBUG_ASSET="SpendWise-${TAG}-debug.apk"
+
+          cp "$RELEASE_APK" "release-assets/${RELEASE_ASSET}"
+          cp "$DEBUG_APK" "release-assets/${DEBUG_ASSET}"
+
+          cd release-assets
+          sha256sum "${RELEASE_ASSET}" "${DEBUG_ASSET}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+          echo "release_asset=${RELEASE_ASSET}" >> "$GITHUB_OUTPUT"
+          echo "debug_asset=${DEBUG_ASSET}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpendWise-${{ steps.version.outputs.tag_name }}-APKs
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Release Notes summary
+        id: notes
+        run: |
+          TAG="${{ steps.version.outputs.tag_name }}"
+          SIGNED_MODE="${{ steps.signing.outputs.signed_mode }}"
+          RELEASE_ASSET="${{ steps.assets.outputs.release_asset }}"
+          DEBUG_ASSET="${{ steps.assets.outputs.debug_asset }}"
+
+          if [ "$SIGNED_MODE" = "production" ]; then
+            SIGNING_NOTICE="✅ **Signed Production Release**: Signed using the repository's configured production keystore (`SIGNING_KEYSTORE_BASE64`)."
+          else
+            SIGNING_NOTICE="⚠️ **Signing Notice (Temporary CI Certificate)**: This release APK was signed with a temporary self-signed certificate generated during the GitHub Actions run because `SIGNING_KEYSTORE_BASE64` was not configured in repository secrets. It is ready for direct installation and testing on Android devices, but upgrading across future builds without uninstalling requires configuring a persistent `SIGNING_KEYSTORE_BASE64` secret."
+          fi
+
+          cat <<EOF > release-notes.md
+          ## 📥 Download SpendWise (${TAG})
+
+          | Variant | File | Description |
+          | :--- | :--- | :--- |
+          | **Release APK (Recommended)** | \`${RELEASE_ASSET}\` | Optimized release build for everyday use on Android 8.0+ (API 26+) devices. |
+          | **Debug APK** | \`${DEBUG_ASSET}\` | Debuggable build for development, inspection, and testing. |
+          | **SHA-256 Checksums** | \`SHA256SUMS.txt\` | Cryptographic SHA-256 hashes to verify APK file integrity. |
+
+          ### 🔐 APK Signing Status
+          ${SIGNING_NOTICE}
+
+          ### 📲 How to Install on Android
+          1. Download **\`${RELEASE_ASSET}\`** from the **Assets** section below on your Android phone.
+          2. Open the downloaded `.apk` file from your notification bar or **Files / Downloads** app.
+          3. If prompted, allow **Install unknown apps** for your browser or file manager.
+          4. Tap **Install** and open **SpendWise**.
+          EOF
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: SpendWise ${{ steps.version.outputs.tag_name }}
+          body_path: release-notes.md
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.tag_name, '-alpha') || contains(steps.version.outputs.tag_name, '-beta') || contains(steps.version.outputs.tag_name, '-rc') }}
+          overwrite_files: true
+          files: |
+            release-assets/${{ steps.assets.outputs.release_asset }}
+            release-assets/${{ steps.assets.outputs.debug_asset }}
+            release-assets/SHA256SUMS.txt
+
+      - name: Clean up temporary signing keystores
+        if: always()
+        run: |
+          rm -f app/release-key.jks
+          git checkout -- debug.keystore 2>/dev/null || rm -f debug.keystore

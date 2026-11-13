@@ -1,16 +1,61 @@
 # SpendWise 💰
 
+[![Download Latest APK](https://img.shields.io/badge/Download_Latest_APK-SpendWise_v1.0.0-0171DF?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Bappi2007/SpendWise/releases/latest)
+[![GitHub Release](https://img.shields.io/github/v/release/Bappi2007/SpendWise?style=for-the-badge&logo=github&color=3CAE8B)](https://github.com/Bappi2007/SpendWise/releases/latest)
+[![Platform](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-FFD140?style=for-the-badge&logo=android&logoColor=121660)](https://github.com/Bappi2007/SpendWise/releases)
+[![Offline First](https://img.shields.io/badge/Privacy-100%25_Offline-121660?style=for-the-badge)](https://github.com/Bappi2007/SpendWise)
+
 > A modern, privacy-first native Android personal finance & expense manager built with **Kotlin**, **Jetpack Compose**, **Material 3**, and **Room Database**.
 
 SpendWise operates 100% offline with **zero network permissions**, keeping all financial transactions, fund inflows, and friend debt settlements securely on your device. It provides interactive data visualizations, group expense splitting, dedicated friend loan tracking with automated repayment fund restoration, a flexible budget controller with fund tracking, calendar-based data management, local JSON backups via Android's Storage Access Framework (SAF), and spreadsheet exports (CSV & native Excel `.xlsx`).
 
 ---
 
+## 📥 Download SpendWise APK
+
+Get the latest pre-built Android APK directly from **GitHub Releases**:
+
+### 👉 [**Download Latest APK**](https://github.com/Bappi2007/SpendWise/releases/latest)
+*(Direct link: `https://github.com/Bappi2007/SpendWise/releases/latest`)*
+
+| Release Info | Details |
+| :--- | :--- |
+| **Latest Version** | `v1.0.0` (`versionCode = 1`, `versionName = "1.0"`) |
+| **Application ID** | `com.aistudio.spendwise.qvrpnm` |
+| **Minimum Android** | Android 8.0 Oreo (API 26) or newer (Target/Compile SDK 36) |
+| **Available Assets** | `SpendWise-<tag>-release.apk` (Recommended), `SpendWise-<tag>-debug.apk`, `SHA256SUMS.txt` |
+| **All Releases** | [https://github.com/Bappi2007/SpendWise/releases](https://github.com/Bappi2007/SpendWise/releases) |
+
+### 📲 How to Install the APK on Your Android Device
+1. Open the [**Latest Release page**](https://github.com/Bappi2007/SpendWise/releases/latest) on your Android phone.
+2. Scroll down to the **Assets** section and tap **`SpendWise-v1.0.0-release.apk`** (or the latest version tag) to download.
+3. Once downloaded, tap the file in your notification shade or open it via your **Files / Downloads** app.
+4. If Android prompts you with *"For your security, your phone currently isn't allowed to install unknown apps from this source"*, tap **Settings** and enable **Allow from this source**.
+5. Tap **Install**, then tap **Open** to start using SpendWise!
+
+> **🔐 Note on APK Signing**:
+> - When repository secrets (`SIGNING_KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_PASSWORD`) are configured in GitHub, the Release APK is signed with the persistent production upload key.
+> - If those secrets are not configured, the GitHub Actions workflow automatically generates a temporary self-signed certificate during the build so the Release APK can still be installed immediately on any Android device (Android forbids installing completely unsigned APKs). Note that upgrading over a previous installation without uninstalling requires a consistent signing key across releases.
+
+---
+
 ## 👨‍💻 Author & Attribution
 
 **Developed by Bishal Mandal**  
+- **GitHub**: [@Bappi2007](https://github.com/Bappi2007)  
+- **Repository**: [Bappi2007/SpendWise](https://github.com/Bappi2007/SpendWise)  
 - **Email**: [bishalkumandal777@gmail.com](mailto:bishalkumandal777@gmail.com)  
 - **Version**: SpendWise v1.0 (Offline-first Jetpack Compose Room Database)
+
+---
+
+## 📱 Screenshots & Application Preview
+
+| Home & Executive Summary | Split Hub & Friend Loans | Monthly Analytics & Charts | Flexible Budget Controller |
+| :---: | :---: | :---: | :---: |
+| *Deep Navy-to-Royal Blue hero card, Available Balance, Who Owes Me hub, and grouped daily feed* | *Equal / Percentage / Manual splits, Lend / Borrow mode, and automatic repayment fund restoration* | *Interactive Canvas Donut Chart, Daily Bar Chart, 6-Month Trend Line, and Income Budget meter* | *"My Funds" inflow log (parents, salary, freelance), ON/OFF monthly limit switch, and safe daily pace* |
+
+*(To display live screenshots here, add images to a `screenshots/` folder in the repository such as `screenshots/home.png`, `screenshots/splits.png`, `screenshots/analytics.png`, and `screenshots/budget.png`.)*
 
 ---
 
@@ -98,17 +143,21 @@ SpendWise operates 100% offline with **zero network permissions**, keeping all f
 
 ---
 
-## 🛠️ Tech Stack & Architecture
+## 🛠️ Tech Stack & Build Configuration
 
-- **Language**: Kotlin 2.2.10
-- **UI Framework**: Jetpack Compose (Material 3, Material You tokens)
-- **Architecture**: MVVM (Model-View-ViewModel) + Repository Pattern
-- **Local Database**: Android Room 2.7.0 (SQLite) via Kotlin Symbol Processing (KSP)
-- **Reactive Streams**: Kotlin Coroutines & `StateFlow` / `SharedFlow`
-- **Settings Store**: Jetpack DataStore Preferences
-- **Visuals**: Bespoke Jetpack Compose Canvas charts (Donut, Bar, Line, Split Graphs)
-- **Excel Generator**: OpenXML SpreadsheetML ZIP generator (`java.util.zip.ZipOutputStream`)
-- **Testing**: JUnit 4 + Robolectric local JVM testing
+| Component | Version / Configuration |
+| :--- | :--- |
+| **Language** | Kotlin `2.2.10` |
+| **Android Gradle Plugin (AGP)** | `9.1.1` |
+| **Gradle Wrapper** | `9.3.1` |
+| **KSP (Symbol Processing)** | `2.3.5` |
+| **SDK Versions** | `compileSdk = 36` (`minorApiLevel = 1`), `targetSdk = 36`, `minSdk = 26` |
+| **Java Target** | `JavaVersion.VERSION_11` bytecode (built with **JDK 17 / JDK 21**) |
+| **UI Framework** | Jetpack Compose (Material 3) |
+| **Architecture** | MVVM (Model-View-ViewModel) + Repository Pattern |
+| **Local Database** | Android Room `2.7.0` (SQLite) |
+| **Settings Store** | Jetpack DataStore Preferences `1.1.7` |
+| **Testing** | JUnit 4 + Robolectric `4.16.1` |
 
 ---
 
@@ -180,7 +229,7 @@ The test suite validates Room database persistence, mathematical aggregations, s
 
 ```bash
 # Run all unit and Robolectric tests via Gradle
-gradle :app:testDebugUnitTest
+./gradlew :app:testDebugUnitTest
 ```
 
 ### Key Test Suites:
@@ -193,44 +242,53 @@ gradle :app:testDebugUnitTest
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Building from Source (Developers)
 
 ### Prerequisites
-- **Android Studio** (Ladybug / Jellyfish or newer recommended).
-- **Android SDK** API 26 (Android 8.0) or higher (recommended API 34+).
+- **Android Studio** (Ladybug / Meerkat or newer recommended).
+- **Android SDK** API 36 (compileSdk 36, minSdk 26).
 - **JDK 17 or JDK 21**.
 
-### Running the App
-1. Clone or open this repository in **Android Studio**.
-2. Allow Gradle to sync dependencies.
-3. Connect an Android device or start an Android Emulator.
-4. Click **Run** (`Shift + F10`) to build and install SpendWise.
+### Cloning & Running Locally
+```bash
+git clone https://github.com/Bappi2007/SpendWise.git
+cd SpendWise
+./gradlew assembleDebug
+```
 
 ---
 
-## 📦 Automated Release APK via GitHub Actions
+## 📦 Automated GitHub Releases & CI Workflows
 
-SpendWise includes an automated CI workflow at `.github/workflows/release-apk.yml` that builds and packages a signed Release APK on every push to `main` or manually via **Run workflow** (`workflow_dispatch`).
+SpendWise includes two GitHub Actions workflows in `.github/workflows/`:
 
-### Required GitHub Repository Secrets
+1. **`.github/workflows/release.yml` (Tag-Based GitHub Releases)**:
+   - Automatically triggers whenever a version tag matching `v*` (e.g., `v1.0.0`, `v1.0.1`, `v1.1.0`) is pushed to GitHub, or manually via **Actions > SpendWise Automatic GitHub Release > Run workflow**.
+   - Builds both **Release** (`SpendWise-<tag>-release.apk`) and **Debug** (`SpendWise-<tag>-debug.apk`) APKs, generates `SHA256SUMS.txt`, creates a new GitHub Release, and attaches the files to [GitHub Releases](https://github.com/Bappi2007/SpendWise/releases/latest).
+2. **`.github/workflows/release-apk.yml` (Main Branch CI Build)**:
+   - Runs on every push to `main` and uploads the Release APK as a workflow build artifact.
 
-To sign the APK with your own production key:
+### Publishing a New Release via Git Tags
+```bash
+git tag -a v1.0.0 -m "SpendWise v1.0.0 Release"
+git push origin v1.0.0
+```
 
-1. Generate your release keystore with alias `upload`:
+### Optional Production Signing Secrets
+To sign release APKs with your own persistent production keystore across all future updates:
+
+1. Generate your upload keystore with alias `upload`:
    ```bash
    keytool -genkeypair -v -keystore my-upload-key.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
    ```
-2. Convert the keystore to a Base64 string:
+2. Encode the keystore as Base64:
    ```bash
-   # Linux / macOS
    base64 -w 0 my-upload-key.jks
    ```
-3. In your GitHub repository, go to **Settings > Secrets and variables > Actions > New repository secret** and configure:
-   - `SIGNING_KEYSTORE_BASE64`: The Base64-encoded contents of `my-upload-key.jks`.
-   - `STORE_PASSWORD`: Keystore password.
-   - `KEY_PASSWORD`: Key password.
-
-> **Note on CI Fallback**: If secrets are not configured, the workflow automatically generates a temporary validation keystore with alias `upload` so the release build always finishes cleanly and produces a downloadable artifact (`SpendWise-Release-APK`).
+3. In your GitHub repository (**Settings > Secrets and variables > Actions > New repository secret**), add:
+   - `SIGNING_KEYSTORE_BASE64`: Base64 string of `my-upload-key.jks`.
+   - `STORE_PASSWORD`: Your keystore password.
+   - `KEY_PASSWORD`: Your key password for alias `upload`.
 
 ---
 
@@ -239,4 +297,4 @@ To sign the APK with your own production key:
 SpendWise requires **NO runtime permissions** and **NO network permissions**:
 - `<uses-permission android:name="android.permission.INTERNET" />` is **NOT** declared.
 - File exports and backups use the Android **Storage Access Framework** and **FileProvider**, ensuring zero access to private external storage.
-- All application data is stored in the app's private, sandboxed SQLite database at `/data/user/0/<application_id>/databases/spendwise_database`.
+- All application data is stored in the app's private, sandboxed SQLite database at `/data/user/0/com.aistudio.spendwise.qvrpnm/databases/spendwise_database`.
