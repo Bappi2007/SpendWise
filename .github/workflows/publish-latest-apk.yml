@@ -1,0 +1,87 @@
+name: Publish Latest SpendWise APK
+
+on:
+  workflow_run:
+    workflows:
+      - SpendWise Release APK
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-latest-apk
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Skip if no longer the latest main commit
+        id: freshness
+        run: |
+          git fetch origin main
+          MAIN_SHA=$(git rev-parse origin/main)
+          RUN_SHA="${{ github.event.workflow_run.head_sha }}"
+
+          if [ "$MAIN_SHA" != "$RUN_SHA" ]; then
+            echo "This build is not for the latest commit on main."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the APK artifact
+        if: steps.freshness.outputs.publish == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: SpendWise-Release-APK
+          path: downloaded-apk
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Prepare release assets
+        if: steps.freshness.outputs.publish == 'true'
+        run: |
+          APK=$(find downloaded-apk -type f -name '*.apk' -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found in the build artifact."
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          cp "$APK" release-assets/SpendWise-latest-release.apk
+          sha256sum release-assets/SpendWise-latest-release.apk \
+            > release-assets/SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        if: steps.freshness.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-${{ github.event.workflow_run.head_sha }}
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
+          name: SpendWise Latest Build
+          body: |
+            Automatically built from the latest successful commit on `main`.
+
+            Download `SpendWise-latest-release.apk` below.
+          files: |
+            release-assets/SpendWise-latest-release.apk
+            release-assets/SHA256SUMS.txt
+          overwrite_files: true
+          make_latest: true
+          prerelease: false
+          draft: false
