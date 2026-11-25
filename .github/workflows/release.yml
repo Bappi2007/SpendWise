@@ -180,10 +180,29 @@ jobs:
             exit 1
           fi
 
-          if ! keytool -printcert -jarfile "$RELEASE_APK" | grep -q "Owner:"; then
-            echo "::error::Release APK signature verification failed."
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT/build-tools" ]; then
+            echo "::error::ANDROID_HOME/build-tools directory not found."
             exit 1
           fi
+
+          APKSIGNER=$(find "$SDK_ROOT/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner executable not found under $SDK_ROOT/build-tools/"
+            exit 1
+          fi
+
+          echo "Using apksigner: $APKSIGNER"
+          VERIFY_OUTPUT=$("$APKSIGNER" verify --verbose --print-certs "$RELEASE_APK")
+          echo "$VERIFY_OUTPUT"
+
+          CERT_SHA256=$(printf '%s\n' "$VERIFY_OUTPUT" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2; exit}')
+          if [ -z "$CERT_SHA256" ]; then
+            echo "::error::Failed to extract Signer #1 certificate SHA-256 digest from apksigner output."
+            exit 1
+          fi
+
+          echo "Signing certificate SHA-256 fingerprint: $CERT_SHA256"
 
           RELEASE_ASSET="SpendWise-${TAG}-release.apk"
           DEBUG_ASSET="SpendWise-${TAG}-debug.apk"
