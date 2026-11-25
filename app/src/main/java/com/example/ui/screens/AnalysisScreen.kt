@@ -94,7 +94,12 @@ fun AnalysisScreen(
             )
         }
 
-        if (summary == null || (summary.totalSpent == 0.0 && summary.totalIncome == 0.0)) {
+        val hasCarryover = summary != null && (
+            summary.previousCarryoverTotal != 0.0 ||
+                summary.previousCarryoverCash != 0.0 ||
+                summary.previousCarryoverUpi != 0.0
+            )
+        if (summary == null || (summary.totalSpent == 0.0 && summary.totalIncome == 0.0 && !hasCarryover)) {
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -617,11 +622,30 @@ fun MonthlyBudgetCard(
                     text = if (isLimitEnabled) {
                         "Budget: $currencySymbol${String.format(Locale.US, "%,.0f", summary.monthlyBudget)}"
                     } else {
-                        "Total Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.totalIncome)}"
+                        "This Month Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.totalIncome)}"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            if (summary.previousCarryoverTotal != 0.0 || summary.previousCarryoverCash != 0.0 || summary.previousCarryoverUpi != 0.0) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Remained from Last Month:",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "$currencySymbol${String.format(Locale.US, "%,.2f", summary.previousCarryoverTotal)} (Cash: $currencySymbol${String.format(Locale.US, "%,.0f", summary.previousCarryoverCash)} • UPI: $currencySymbol${String.format(Locale.US, "%,.0f", summary.previousCarryoverUpi)})",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }
@@ -661,13 +685,50 @@ fun CashAndUpiBalanceCard(
                     )
                 }
                 Text(
-                    text = "Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.totalIncome)}",
+                    text = "Month Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.totalIncome)}",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.primary
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Remained from Last Month Banner
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("last_month_remaining_banner")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Remained from Last Month",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Cash: $currencySymbol${String.format(Locale.US, "%,.2f", summary.previousCarryoverCash)} • UPI: $currencySymbol${String.format(Locale.US, "%,.2f", summary.previousCarryoverUpi)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = "$currencySymbol${String.format(Locale.US, "%,.2f", summary.previousCarryoverTotal)}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (summary.previousCarryoverTotal < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -704,10 +765,17 @@ fun CashAndUpiBalanceCard(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Added: $currencySymbol${String.format(Locale.US, "%,.0f", summary.cashIncome)}",
+                            text = "This Month: $currencySymbol${String.format(Locale.US, "%,.0f", summary.cashIncome)}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (summary.previousCarryoverCash != 0.0) {
+                            Text(
+                                text = "Last Month: $currencySymbol${String.format(Locale.US, "%,.0f", summary.previousCarryoverCash)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
                             text = "Net Spent: $currencySymbol${String.format(Locale.US, "%,.0f", summary.cashSpent)}",
                             style = MaterialTheme.typography.labelSmall,
@@ -747,10 +815,17 @@ fun CashAndUpiBalanceCard(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Added: $currencySymbol${String.format(Locale.US, "%,.0f", summary.upiIncome)}",
+                            text = "This Month: $currencySymbol${String.format(Locale.US, "%,.0f", summary.upiIncome)}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (summary.previousCarryoverUpi != 0.0) {
+                            Text(
+                                text = "Last Month: $currencySymbol${String.format(Locale.US, "%,.0f", summary.previousCarryoverUpi)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
                             text = "Net Spent: $currencySymbol${String.format(Locale.US, "%,.0f", summary.upiSpent)}",
                             style = MaterialTheme.typography.labelSmall,

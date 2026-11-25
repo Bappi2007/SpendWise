@@ -52,6 +52,16 @@ sealed class DashboardTransactionItem {
         override val amount: Double get() = fund.amount
         override val title: String get() = fund.title
     }
+
+    data class Repayment(
+        val split: ExpenseSplitEntity,
+        val parentExpense: ExpenseWithCategory
+    ) : DashboardTransactionItem() {
+        override val id: String get() = "repay_log_${split.id}"
+        override val timestamp: Long get() = split.settledTimestamp ?: parentExpense.expense.timestamp
+        override val amount: Double get() = split.allocatedAmount
+        override val title: String get() = "Returned by ${split.personName}"
+    }
 }
 
 data class DailyGroupedTransactions(
@@ -69,6 +79,7 @@ data class HomeSummary(
     val budgetRemaining: Double,
     val budgetProgress: Float,
     val totalFundsAdded: Double = 0.0,
+    val carryoverBalance: Double = 0.0,
     val availableBalance: Double = 0.0,
     val hasCustomFunds: Boolean = false,
     val isMonthlyLimitEnabled: Boolean = false
@@ -182,7 +193,7 @@ class ExpenseViewModel(
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = HomeSummary(0.0, 0.0, 0.0, 0.0, 0f, 0.0, 0.0, false, false)
+        initialValue = HomeSummary(0.0, 0.0, 0.0, 0.0, 0f)
     )
 
     val allSplits: StateFlow<List<ExpenseSplitEntity>> = repository.allSplits
@@ -619,9 +630,20 @@ class ExpenseViewModel(
             val currentMonth = now.get(Calendar.MONTH)
             val currentDay = now.get(Calendar.DAY_OF_YEAR)
 
+            val startOfCurrentMonthMillis = Calendar.getInstance().apply {
+                set(Calendar.YEAR, currentYear)
+                set(Calendar.MONTH, currentMonth)
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
             val itemCal = Calendar.getInstance()
             var todayTotal = 0.0
             var monthTotal = 0.0
+            var priorNetExpenses = 0.0
 
             for (item in list) {
                 itemCal.timeInMillis = item.expense.timestamp
@@ -629,21 +651,39 @@ class ExpenseViewModel(
                 val iMonth = itemCal.get(Calendar.MONTH)
                 val iDay = itemCal.get(Calendar.DAY_OF_YEAR)
 
+                val settledSplits = item.splits.filter { it.isPaid }.sumOf { it.allocatedAmount }
+                val netAmount = (item.expense.amount - settledSplits).coerceAtLeast(0.0)
+
                 if (iYear == currentYear && iMonth == currentMonth) {
-                    val settledSplits = item.splits.filter { it.isPaid }.sumOf { it.allocatedAmount }
-                    val netAmount = (item.expense.amount - settledSplits).coerceAtLeast(0.0)
                     monthTotal += netAmount
                     if (iDay == currentDay) {
                         todayTotal += netAmount
                     }
+                } else if (item.expense.timestamp < startOfCurrentMonthMillis) {
+                    priorNetExpenses += netAmount
                 }
             }
 
-            val totalFundsAdded = funds.filter { !it.id.startsWith("repay_split_") }.sumOf { it.amount }
-            val hasCustomFunds = funds.any { !it.id.startsWith("repay_split_") }
+            val validFunds = funds.filter { !it.id.startsWith("repay_split_") }
+            var currentMonthFunds = 0.0
+            var priorFunds = 0.0
+            for (fund in validFunds) {
+                itemCal.timeInMillis = fund.timestamp
+                val fYear = itemCal.get(Calendar.YEAR)
+                val fMonth = itemCal.get(Calendar.MONTH)
+                if (fYear == currentYear && fMonth == currentMonth) {
+                    currentMonthFunds += fund.amount
+                } else if (fund.timestamp < startOfCurrentMonthMillis) {
+                    priorFunds += fund.amount
+                }
+            }
+
+            val carryoverBalance = priorFunds - priorNetExpenses
+            val totalFundsAdded = currentMonthFunds
+            val hasCustomFunds = validFunds.isNotEmpty()
 
             return if (hasCustomFunds) {
-                val availableBalance = totalFundsAdded - monthTotal
+                val availableBalance = carryoverBalance + totalFundsAdded - monthTotal
                 val progress = if (budget > 0) (monthTotal / budget).toFloat() else 0f
                 HomeSummary(
                     todaySpent = todayTotal,
@@ -652,6 +692,7 @@ class ExpenseViewModel(
                     budgetRemaining = (budget - monthTotal).coerceAtLeast(0.0),
                     budgetProgress = progress,
                     totalFundsAdded = totalFundsAdded,
+                    carryoverBalance = carryoverBalance,
                     availableBalance = availableBalance,
                     hasCustomFunds = true,
                     isMonthlyLimitEnabled = isMonthlyLimitEnabled
@@ -662,7 +703,7 @@ class ExpenseViewModel(
                 val availableBalance = if (budget > 0 && isMonthlyLimitEnabled) {
                     budget - monthTotal
                 } else {
-                    0.0 - monthTotal
+                    carryoverBalance - monthTotal
                 }
                 HomeSummary(
                     todaySpent = todayTotal,
@@ -671,6 +712,7 @@ class ExpenseViewModel(
                     budgetRemaining = remaining,
                     budgetProgress = progress,
                     totalFundsAdded = 0.0,
+                    carryoverBalance = carryoverBalance,
                     availableBalance = availableBalance,
                     hasCustomFunds = false,
                     isMonthlyLimitEnabled = isMonthlyLimitEnabled
@@ -691,6 +733,11 @@ class ExpenseViewModel(
             val allItems: MutableList<DashboardTransactionItem> = ArrayList(expenses.size + funds.size)
             for (e in expenses) {
                 allItems.add(DashboardTransactionItem.Expense(e))
+                for (sp in e.splits) {
+                    if (sp.isPaid) {
+                        allItems.add(DashboardTransactionItem.Repayment(sp, e))
+                    }
+                }
             }
             for (f in funds) {
                 allItems.add(DashboardTransactionItem.Fund(f))
@@ -723,6 +770,9 @@ class ExpenseViewModel(
                     when (item) {
                         is DashboardTransactionItem.Expense -> expenseSum += item.amount
                         is DashboardTransactionItem.Fund -> fundSum += item.amount
+                        is DashboardTransactionItem.Repayment -> {
+                            // Repayments restore balance without inflating daily Inflow totals
+                        }
                     }
                 }
 

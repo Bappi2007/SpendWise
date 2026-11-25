@@ -194,9 +194,10 @@ class SettingsViewModel(
                 when (result) {
                     is RestoreResult.Success -> {
                         _pendingRestore.value = null
+                        val fundText = if (result.fundsRestored > 0) ", ${result.fundsRestored} income entries" else ""
                         _eventFlow.emit(
                             UiEvent.ShowSnackbar(
-                                "Restore successful: ${result.expensesRestored} expenses (${result.mode})"
+                                "Restore successful: ${result.expensesRestored} expenses$fundText (${result.mode})"
                             )
                         )
                     }

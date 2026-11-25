@@ -338,18 +338,53 @@ class ExpenseRepository(
         val monthBudgets = prefs.monthBudgets
         val specificMonthBudget = monthBudgets[monthBudgetKey]
 
-        // Fetch pure income funds for the month (fallback to all funds if none in this month). Repayments are never included.
+        // Fetch pure income funds strictly for the selected month (never copy previous month's income into next month).
         val monthFundsList = fundDao?.getFundsInRangeSync(startCurrent, endCurrent) ?: emptyList()
-        val allFundsList = fundDao?.getAllFundsSync() ?: emptyList()
-        val activeFunds = if (monthFundsList.isNotEmpty()) monthFundsList else allFundsList
 
-        val totalIncome = activeFunds.sumOf { it.amount }
-        val cashIncome = activeFunds
+        val totalIncome = monthFundsList.sumOf { it.amount }
+        val cashIncome = monthFundsList
             .filter { it.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
             .sumOf { it.amount }
-        val upiIncome = activeFunds
+        val upiIncome = monthFundsList
             .filter { !it.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
             .sumOf { it.amount }
+
+        // Calculate cumulative carryover remaining balance from all previous months strictly before startCurrent
+        val priorFunds = fundDao?.getFundsBeforeSync(startCurrent) ?: emptyList()
+        val priorExpenses = expenseDao.getExpensesBeforeSync(startCurrent)
+
+        val priorCashIncome = priorFunds
+            .filter { it.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.amount }
+        val priorUpiIncome = priorFunds
+            .filter { !it.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.amount }
+
+        val priorGrossCashSpent = priorExpenses
+            .filter { it.expense.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.expense.amount }
+        val priorGrossUpiSpent = priorExpenses
+            .filter { !it.expense.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.expense.amount }
+
+        var priorCashRepayments = 0.0
+        var priorUpiRepayments = 0.0
+        for (item in priorExpenses) {
+            for (split in item.splits) {
+                if (split.isPaid) {
+                    val method = split.repaymentMethod ?: item.expense.paymentMethod
+                    if (method.equals(PaymentMethod.CASH.name, ignoreCase = true)) {
+                        priorCashRepayments += split.allocatedAmount
+                    } else {
+                        priorUpiRepayments += split.allocatedAmount
+                    }
+                }
+            }
+        }
+
+        val previousCarryoverCash = priorCashIncome - priorGrossCashSpent + priorCashRepayments
+        val previousCarryoverUpi = priorUpiIncome - priorGrossUpiSpent + priorUpiRepayments
+        val previousCarryoverTotal = previousCarryoverCash + previousCarryoverUpi
 
         // Calculate gross cash and UPI expenses in this month
         val grossCashSpent = currentExpenses
@@ -377,14 +412,14 @@ class ExpenseRepository(
 
         val netCashSpent = (grossCashSpent - cashRepayments).coerceAtLeast(0.0)
         val netUpiSpent = (grossUpiSpent - upiRepayments).coerceAtLeast(0.0)
-        val cashRemaining = cashIncome - grossCashSpent + cashRepayments
-        val upiRemaining = upiIncome - grossUpiSpent + upiRepayments
+        val cashRemaining = previousCarryoverCash + cashIncome - grossCashSpent + cashRepayments
+        val upiRemaining = previousCarryoverUpi + upiIncome - grossUpiSpent + upiRepayments
 
-        // When monthly limit is off, calculate the monthly budget according to total income
+        // When monthly limit is off, calculate the monthly budget according to this month's income + positive carryover
         val effectiveBudget = if (isLimitEnabled) {
             specificMonthBudget ?: monthlyBudget
         } else {
-            totalIncome
+            totalIncome + previousCarryoverTotal.coerceAtLeast(0.0)
         }
         val isMonthSpecific = isLimitEnabled && specificMonthBudget != null
 
@@ -461,7 +496,10 @@ class ExpenseRepository(
             upiSpent = netUpiSpent,
             cashRemaining = cashRemaining,
             upiRemaining = upiRemaining,
-            settledRepaymentsTotal = settledRepaymentsTotal
+            settledRepaymentsTotal = settledRepaymentsTotal,
+            previousCarryoverTotal = previousCarryoverTotal,
+            previousCarryoverCash = previousCarryoverCash,
+            previousCarryoverUpi = previousCarryoverUpi
         )
     }
 

@@ -45,7 +45,9 @@ class DefaultAppContainer(private val application: Application) : AppContainer {
             categoryDao = database.categoryDao(),
             expenseDao = database.expenseDao(),
             preferencesRepository = preferencesRepository,
-            expenseSplitDao = database.expenseSplitDao()
+            expenseSplitDao = database.expenseSplitDao(),
+            fundDao = database.fundDao(),
+            friendDao = database.friendDao()
         )
     }
 

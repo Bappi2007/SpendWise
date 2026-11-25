@@ -535,5 +535,143 @@ class FundsAndFriendsTest {
         assertEquals(4500.0, summary.cashRemaining, 0.001)
         assertEquals(1000.0, summary.upiRemaining, 0.001)
     }
+
+    @Test
+    fun `income stays in its own month while unspent remaining balance carries over to next month`() = runBlocking {
+        val category = CategoryEntity(
+            id = "cat_food",
+            name = "Food",
+            iconKey = "food",
+            colorHex = 0xFFF97316L,
+            isDefault = true
+        )
+        database.categoryDao().insertCategory(category)
+
+        val repository = com.example.data.repository.ExpenseRepository(
+            expenseDao = expenseDao,
+            categoryDao = database.categoryDao(),
+            preferencesRepository = com.example.data.preferences.UserPreferencesRepository(context),
+            expenseSplitDao = database.expenseSplitDao(),
+            friendDao = friendDao,
+            fundDao = fundDao
+        )
+        repository.setMonthlyLimitEnabled(false)
+
+        // Month 1: January 2026
+        val janCal = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.JANUARY, 15, 12, 0, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val janTimestamp = janCal.timeInMillis
+
+        // Add 6,000 UPI and 4,000 Cash in January (Total = 10,000)
+        fundDao.insertFund(
+            FundEntity(
+                id = "jan_upi",
+                title = "Jan UPI Allowance",
+                amount = 6000.0,
+                source = "From Parents",
+                timestamp = janTimestamp,
+                paymentMethod = PaymentMethod.UPI.name
+            )
+        )
+        fundDao.insertFund(
+            FundEntity(
+                id = "jan_cash",
+                title = "Jan Cash Allowance",
+                amount = 4000.0,
+                source = "Pocket Money",
+                timestamp = janTimestamp,
+                paymentMethod = PaymentMethod.CASH.name
+            )
+        )
+
+        // Spend 2,000 UPI and 1,000 Cash in January (Remaining: 4,000 UPI + 3,000 Cash = 7,000)
+        expenseDao.insertExpense(
+            ExpenseEntity(
+                id = "jan_exp_upi",
+                title = "Jan Books",
+                amount = 2000.0,
+                categoryId = category.id,
+                timestamp = janTimestamp,
+                paymentMethod = PaymentMethod.UPI.name
+            )
+        )
+        expenseDao.insertExpense(
+            ExpenseEntity(
+                id = "jan_exp_cash",
+                title = "Jan Snacks",
+                amount = 1000.0,
+                categoryId = category.id,
+                timestamp = janTimestamp,
+                paymentMethod = PaymentMethod.CASH.name
+            )
+        )
+
+        val janSummary = repository.calculateMonthSummary(2026, 1, 0.0)
+        assertEquals(10000.0, janSummary.totalIncome, 0.001)
+        assertEquals(3000.0, janSummary.totalSpent, 0.001)
+        assertEquals(0.0, janSummary.previousCarryoverTotal, 0.001)
+        assertEquals(4000.0, janSummary.upiRemaining, 0.001)
+        assertEquals(3000.0, janSummary.cashRemaining, 0.001)
+
+        // Month 2: February 2026 (No new income added in February!)
+        val febSummary = repository.calculateMonthSummary(2026, 2, 0.0)
+        // Income in Feb MUST be 0.0 (not transferred from Jan!)
+        assertEquals(0.0, febSummary.totalIncome, 0.001)
+        assertEquals(0.0, febSummary.upiIncome, 0.001)
+        assertEquals(0.0, febSummary.cashIncome, 0.001)
+        // Carryover from Jan MUST be 7,000 (4,000 UPI + 3,000 Cash)
+        assertEquals(7000.0, febSummary.previousCarryoverTotal, 0.001)
+        assertEquals(4000.0, febSummary.previousCarryoverUpi, 0.001)
+        assertEquals(3000.0, febSummary.previousCarryoverCash, 0.001)
+        assertEquals(4000.0, febSummary.upiRemaining, 0.001)
+        assertEquals(3000.0, febSummary.cashRemaining, 0.001)
+    }
+
+    @Test
+    fun `groupTransactionsByDay includes settled split and loan repayments in logs without adding to dayFundTotal`() {
+        val category = CategoryEntity(
+            id = "cat_default_money_lent",
+            name = "Money Lent",
+            iconKey = "money_lent",
+            colorHex = 0xFF0171DFL,
+            isDefault = true
+        )
+        val now = System.currentTimeMillis()
+        val expense = ExpenseEntity(
+            id = "exp_loan",
+            title = "Lent to Rahul",
+            amount = 1000.0,
+            categoryId = category.id,
+            timestamp = now - 10_000L,
+            paymentMethod = PaymentMethod.UPI.name
+        )
+        val settledSplit = com.example.data.model.ExpenseSplitEntity(
+            id = "sp_loan",
+            expenseId = expense.id,
+            personName = "Rahul",
+            allocatedAmount = 1000.0,
+            percentage = 100.0,
+            isPaid = true,
+            settledTimestamp = now - 2_000L,
+            repaymentMethod = PaymentMethod.CASH.name
+        )
+
+        val grouped = ExpenseViewModel.groupTransactionsByDay(
+            expenses = listOf(ExpenseWithCategory(expense, category, listOf(settledSplit))),
+            funds = emptyList()
+        )
+
+        assertEquals(1, grouped.size)
+        val dayGroup = grouped.first()
+        assertEquals(2, dayGroup.items.size)
+        // Repayment is more recent (now - 2000L), so it appears first in the day's log
+        assertTrue(dayGroup.items[0] is DashboardTransactionItem.Repayment)
+        assertEquals("Returned by Rahul", dayGroup.items[0].title)
+        assertEquals(1000.0, dayGroup.items[0].amount, 0.001)
+        // Daily fund inflow sum must remain 0.0 so repayments do not inflate daily inflow
+        assertEquals(0.0, dayGroup.dayFundTotal, 0.001)
+    }
 }
 

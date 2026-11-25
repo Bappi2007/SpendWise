@@ -1,6 +1,6 @@
 # SpendWise 💰
 
-[![Download Latest APK](https://img.shields.io/badge/Download_Latest_APK-SpendWise_v1.1.0-0171DF?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Bappi2007/SpendWise/releases/latest)
+[![Download Latest APK](https://img.shields.io/badge/Download_Latest_APK-SpendWise_v1.2.0-0171DF?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Bappi2007/SpendWise/releases/latest)
 [![GitHub Release](https://img.shields.io/github/v/release/Bappi2007/SpendWise?style=for-the-badge&logo=github&color=3CAE8B)](https://github.com/Bappi2007/SpendWise/releases/latest)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-FFD140?style=for-the-badge&logo=android&logoColor=121660)](https://github.com/Bappi2007/SpendWise/releases)
 [![Offline First](https://img.shields.io/badge/Privacy-100%25_Offline-121660?style=for-the-badge)](https://github.com/Bappi2007/SpendWise)
@@ -20,10 +20,10 @@ Get the latest pre-built Android APK directly from **GitHub Releases**:
 
 | Release Info | Details |
 | :--- | :--- |
-| **Latest Version** | `v1.1.0` (`versionCode = 2`, `versionName = "1.1"`) |
+| **Latest Version** | `v1.2.0` (`versionCode = 3`, `versionName = "1.2"`) |
 | **Application ID** | `com.aistudio.spendwise.qvrpnm` |
 | **Minimum Android** | Android 8.0 Oreo (API 26) or newer (Target/Compile SDK 36) |
-| **In-Place Upgrade** | Supports seamless Android **Update** over `v1.0` with non-destructive Room migration (`MIGRATION_3_4`) preserving all existing data |
+| **In-Place Upgrade** | Supports seamless Android **Update** over `v1.0` and `v1.1` with non-destructive Room migration (`MIGRATION_3_4`) preserving all existing data |
 | **Available Assets** | `SpendWise-<tag>-release.apk` (Recommended), `SpendWise-<tag>-debug.apk`, `SHA256SUMS.txt` |
 | **All Releases** | [https://github.com/Bappi2007/SpendWise/releases](https://github.com/Bappi2007/SpendWise/releases) |
 
@@ -46,7 +46,7 @@ Get the latest pre-built Android APK directly from **GitHub Releases**:
 - **GitHub**: [@Bappi2007](https://github.com/Bappi2007)  
 - **Repository**: [Bappi2007/SpendWise](https://github.com/Bappi2007/SpendWise)  
 - **Email**: [bishalkumandal777@gmail.com](mailto:bishalkumandal777@gmail.com)  
-- **Version**: SpendWise v1.1 (Offline-first Jetpack Compose Room Database)
+- **Version**: SpendWise v1.2 (Offline-first Jetpack Compose Room Database)
 
 ---
 
@@ -99,9 +99,14 @@ Get the latest pre-built Android APK directly from **GitHub Releases**:
 - **Category-Level Budget Limits**: Allocate spending caps per category (e.g., Food: ₹8,000, Shopping: ₹4,000) with visual progress meters.
 
 ### 4. 📊 Monthly Analytics, Separate Cash & UPI Remaining Balances & Charts
+- **Month-Specific Income & Cumulative Remaining Balance Carryover**:
+  - Income added in a month stays strictly in that month (never artificially copied into future months).
+  - Unspent remaining balance (`Cash` and `UPI`) from previous months automatically carries forward into the next month's available balance, and the **Analysis** tab clearly displays how much money **Remained from Last Month** (`Last Month` carryover + `This Month` added income).
 - **Remaining Money by Medium (Cash vs. UPI Breakdown)**:
   - Dedicated card in the **Analysis** tab showing **Cash Remaining** (`Added` vs `Net Spent`) and **UPI Remaining** (`Added` vs `Net Spent`) side by side.
   - Automatically accounts for settled split/loan repayments into the chosen medium (`Cash` or `UPI`) while keeping **Total Income** strictly equal to genuine income/added funds.
+- **Split & Loan Returns in Home Screen Logs**:
+  - Settled split shares and repaid friend loans appear directly in the **Home Screen -> Recent Transactions** daily timeline with a **Split Return / Loan Return** badge (`Restored` via `UPI` or `Cash`) without inflating the daily `+Inflow` total.
 - **Month-over-Month Navigation**: Effortlessly step through past and upcoming months with `←` and `→` controls.
 - **Dynamic Income-Based Budget**: When the monthly limit toggle is switched **OFF**, monthly budget targets are automatically derived from total genuine income (added funds).
 - **Key Financial Metrics**: Monthly net spend, month-over-month percentage change (`%`) badge, daily average expenditure, and peak spend day.

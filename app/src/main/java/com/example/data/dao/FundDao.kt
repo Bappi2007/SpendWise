@@ -21,6 +21,9 @@ interface FundDao {
     @Query("SELECT * FROM funds WHERE id NOT LIKE 'repay_split_%' AND timestamp >= :startMillis AND timestamp <= :endMillis ORDER BY timestamp DESC")
     suspend fun getFundsInRangeSync(startMillis: Long, endMillis: Long): List<FundEntity>
 
+    @Query("SELECT * FROM funds WHERE id NOT LIKE 'repay_split_%' AND timestamp < :beforeMillis ORDER BY timestamp DESC")
+    suspend fun getFundsBeforeSync(beforeMillis: Long): List<FundEntity>
+
     @Query("SELECT COALESCE(SUM(amount), 0.0) FROM funds WHERE id NOT LIKE 'repay_split_%'")
     fun getTotalFundsAmount(): Flow<Double>
 

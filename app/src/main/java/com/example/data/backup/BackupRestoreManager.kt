@@ -3,10 +3,13 @@ package com.example.data.backup
 import com.example.data.dao.CategoryDao
 import com.example.data.dao.ExpenseDao
 import com.example.data.dao.ExpenseSplitDao
+import com.example.data.dao.FriendDao
+import com.example.data.dao.FundDao
 import com.example.data.model.CategoryEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.ExpenseSplitEntity
-import com.example.data.preferences.UserPreferences
+import com.example.data.model.FriendEntity
+import com.example.data.model.FundEntity
 import com.example.data.preferences.UserPreferencesRepository
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,6 +22,9 @@ data class BackupPreview(
     val categoriesCount: Int,
     val expensesCount: Int,
     val splitsCount: Int = 0,
+    val fundsCount: Int = 0,
+    val friendsCount: Int = 0,
+    val totalFundsAmount: Double = 0.0,
     val earliestExpenseDateEpoch: Long?,
     val latestExpenseDateEpoch: Long?,
     val totalExpenseAmount: Double,
@@ -30,6 +36,8 @@ sealed class RestoreResult {
         val categoriesRestored: Int,
         val expensesRestored: Int,
         val splitsRestored: Int,
+        val fundsRestored: Int = 0,
+        val friendsRestored: Int = 0,
         val mode: String
     ) : RestoreResult()
     data class Error(val message: String) : RestoreResult()
@@ -39,7 +47,9 @@ class BackupRestoreManager(
     private val categoryDao: CategoryDao,
     private val expenseDao: ExpenseDao,
     private val preferencesRepository: UserPreferencesRepository,
-    private val expenseSplitDao: ExpenseSplitDao? = null
+    private val expenseSplitDao: ExpenseSplitDao? = null,
+    private val fundDao: FundDao? = null,
+    private val friendDao: FriendDao? = null
 ) {
 
     companion object {
@@ -59,6 +69,7 @@ class BackupRestoreManager(
         prefsObj.put("currencySymbol", prefs.currencySymbol)
         prefsObj.put("themeMode", prefs.themeMode)
         prefsObj.put("monthlyBudget", prefs.monthlyBudget)
+        prefsObj.put("isMonthlyLimitEnabled", prefs.isMonthlyLimitEnabled)
         root.put("settings", prefsObj)
 
         // Categories
@@ -122,6 +133,36 @@ class BackupRestoreManager(
         }
         root.put("expenses", expArray)
 
+        // Funds (Added Income)
+        val funds = fundDao?.getAllFundsSync() ?: emptyList()
+        val fundsArray = JSONArray()
+        for (fund in funds) {
+            val fObj = JSONObject()
+            fObj.put("id", fund.id)
+            fObj.put("title", fund.title)
+            fObj.put("amount", fund.amount)
+            fObj.put("source", fund.source)
+            fObj.put("timestamp", fund.timestamp)
+            fObj.put("paymentMethod", fund.paymentMethod)
+            if (fund.notes != null) {
+                fObj.put("notes", fund.notes)
+            }
+            fundsArray.put(fObj)
+        }
+        root.put("funds", fundsArray)
+
+        // Friends
+        val friends = friendDao?.getAllFriendsSync() ?: emptyList()
+        val friendsArray = JSONArray()
+        for (friend in friends) {
+            val frObj = JSONObject()
+            frObj.put("id", friend.id)
+            frObj.put("name", friend.name)
+            frObj.put("createdTimestamp", friend.createdTimestamp)
+            friendsArray.put(frObj)
+        }
+        root.put("friends", friendsArray)
+
         return root.toString(2)
     }
 
@@ -156,6 +197,8 @@ class BackupRestoreManager(
 
             val categoriesArray = root.optJSONArray("categories") ?: JSONArray()
             val expensesArray = root.optJSONArray("expenses") ?: JSONArray()
+            val fundsArray = root.optJSONArray("funds") ?: JSONArray()
+            val friendsArray = root.optJSONArray("friends") ?: JSONArray()
 
             var earliestDate: Long? = null
             var latestDate: Long? = null
@@ -176,12 +219,21 @@ class BackupRestoreManager(
                 }
             }
 
+            var totalFundsValue = 0.0
+            for (i in 0 until fundsArray.length()) {
+                val fundObj = fundsArray.getJSONObject(i)
+                totalFundsValue += fundObj.optDouble("amount", 0.0)
+            }
+
             val preview = BackupPreview(
                 schemaVersion = schemaVersion,
                 exportTimestamp = exportTimestamp,
                 categoriesCount = categoriesArray.length(),
                 expensesCount = expensesArray.length(),
                 splitsCount = totalSplits,
+                fundsCount = fundsArray.length(),
+                friendsCount = friendsArray.length(),
+                totalFundsAmount = totalFundsValue,
                 earliestExpenseDateEpoch = earliestDate,
                 latestExpenseDateEpoch = latestDate,
                 totalExpenseAmount = totalAmount,
@@ -207,6 +259,8 @@ class BackupRestoreManager(
         return try {
             val categoriesArray = root.optJSONArray("categories") ?: JSONArray()
             val expensesArray = root.optJSONArray("expenses") ?: JSONArray()
+            val fundsArray = root.optJSONArray("funds") ?: JSONArray()
+            val friendsArray = root.optJSONArray("friends") ?: JSONArray()
             val settingsObj = root.optJSONObject("settings")
 
             val categoriesToRestore = mutableListOf<CategoryEntity>()
@@ -262,16 +316,52 @@ class BackupRestoreManager(
                 }
             }
 
+            val fundsToRestore = mutableListOf<FundEntity>()
+            for (i in 0 until fundsArray.length()) {
+                val f = fundsArray.getJSONObject(i)
+                fundsToRestore.add(
+                    FundEntity(
+                        id = f.optString("id", java.util.UUID.randomUUID().toString()),
+                        title = f.optString("title", "Added Fund"),
+                        amount = f.getDouble("amount"),
+                        source = f.optString("source", "Salary"),
+                        timestamp = f.optLong("timestamp", System.currentTimeMillis()),
+                        notes = if (f.has("notes") && !f.isNull("notes")) f.getString("notes") else null,
+                        paymentMethod = f.optString("paymentMethod", "UPI")
+                    )
+                )
+            }
+
+            val friendsToRestore = mutableListOf<FriendEntity>()
+            for (i in 0 until friendsArray.length()) {
+                val fr = friendsArray.getJSONObject(i)
+                friendsToRestore.add(
+                    FriendEntity(
+                        id = fr.optString("id", java.util.UUID.randomUUID().toString()),
+                        name = fr.getString("name"),
+                        createdTimestamp = fr.optLong("createdTimestamp", System.currentTimeMillis())
+                    )
+                )
+            }
+
             if (replaceAll) {
                 // Wipe and replace
                 expenseSplitDao?.deleteAllSplits()
                 expenseDao.deleteAllExpenses()
+                fundDao?.deleteAllFunds()
+                friendDao?.deleteAllFriends()
                 categoryDao.deleteAll()
 
                 categoryDao.insertCategories(categoriesToRestore)
                 expenseDao.insertExpenses(expensesToRestore)
                 if (splitsToRestore.isNotEmpty()) {
                     expenseSplitDao?.insertSplits(splitsToRestore)
+                }
+                if (fundsToRestore.isNotEmpty()) {
+                    fundDao?.insertFunds(fundsToRestore)
+                }
+                if (friendsToRestore.isNotEmpty()) {
+                    friendDao?.insertFriends(friendsToRestore)
                 }
 
                 if (settingsObj != null) {
@@ -284,9 +374,19 @@ class BackupRestoreManager(
                     if (settingsObj.has("monthlyBudget")) {
                         preferencesRepository.setMonthlyBudget(settingsObj.getDouble("monthlyBudget"))
                     }
+                    if (settingsObj.has("isMonthlyLimitEnabled")) {
+                        preferencesRepository.setMonthlyLimitEnabled(settingsObj.getBoolean("isMonthlyLimitEnabled"))
+                    }
                 }
                 preferencesRepository.setLastBackupTimestamp(System.currentTimeMillis())
-                RestoreResult.Success(categoriesToRestore.size, expensesToRestore.size, splitsToRestore.size, "Replaced All")
+                RestoreResult.Success(
+                    categoriesRestored = categoriesToRestore.size,
+                    expensesRestored = expensesToRestore.size,
+                    splitsRestored = splitsToRestore.size,
+                    fundsRestored = fundsToRestore.size,
+                    friendsRestored = friendsToRestore.size,
+                    mode = "Replaced All"
+                )
             } else {
                 // Merge mode: Skip duplicates using unique IDs
                 val existingCategories = categoryDao.getAllCategoriesSync().associateBy { it.id }
@@ -301,15 +401,44 @@ class BackupRestoreManager(
                     expenseDao.insertExpenses(newExpenses)
                 }
 
+                var newSplitsCount = 0
                 if (splitsToRestore.isNotEmpty() && expenseSplitDao != null) {
                     val existingSplits = expenseSplitDao.getAllSplitsSync().associateBy { it.id }
                     val newSplits = splitsToRestore.filter { !existingSplits.containsKey(it.id) }
                     if (newSplits.isNotEmpty()) {
                         expenseSplitDao.insertSplits(newSplits)
+                        newSplitsCount = newSplits.size
                     }
                 }
 
-                RestoreResult.Success(newCategories.size, newExpenses.size, splitsToRestore.size, "Merged")
+                var newFundsCount = 0
+                if (fundsToRestore.isNotEmpty() && fundDao != null) {
+                    val existingFunds = fundDao.getAllFundsSync().associateBy { it.id }
+                    val newFunds = fundsToRestore.filter { !existingFunds.containsKey(it.id) }
+                    if (newFunds.isNotEmpty()) {
+                        fundDao.insertFunds(newFunds)
+                        newFundsCount = newFunds.size
+                    }
+                }
+
+                var newFriendsCount = 0
+                if (friendsToRestore.isNotEmpty() && friendDao != null) {
+                    val existingFriends = friendDao.getAllFriendsSync().associateBy { it.name.trim().lowercase() }
+                    val newFriends = friendsToRestore.filter { !existingFriends.containsKey(it.name.trim().lowercase()) }
+                    if (newFriends.isNotEmpty()) {
+                        friendDao.insertFriends(newFriends)
+                        newFriendsCount = newFriends.size
+                    }
+                }
+
+                RestoreResult.Success(
+                    categoriesRestored = newCategories.size,
+                    expensesRestored = newExpenses.size,
+                    splitsRestored = newSplitsCount,
+                    fundsRestored = newFundsCount,
+                    friendsRestored = newFriendsCount,
+                    mode = "Merged"
+                )
             }
         } catch (e: Exception) {
             RestoreResult.Error(e.localizedMessage ?: "Unknown restore error")

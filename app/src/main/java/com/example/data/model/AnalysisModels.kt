@@ -51,5 +51,8 @@ data class MonthSummary(
     val upiSpent: Double = 0.0,
     val cashRemaining: Double = 0.0,
     val upiRemaining: Double = 0.0,
-    val settledRepaymentsTotal: Double = 0.0
+    val settledRepaymentsTotal: Double = 0.0,
+    val previousCarryoverTotal: Double = 0.0,
+    val previousCarryoverCash: Double = 0.0,
+    val previousCarryoverUpi: Double = 0.0
 )

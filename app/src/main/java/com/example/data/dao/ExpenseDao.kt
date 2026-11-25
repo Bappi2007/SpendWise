@@ -27,6 +27,10 @@ interface ExpenseDao {
     suspend fun getExpensesByRangeSync(startMillis: Long, endMillis: Long): List<ExpenseWithCategory>
 
     @Transaction
+    @Query("SELECT * FROM expenses WHERE timestamp < :beforeMillis ORDER BY timestamp DESC")
+    suspend fun getExpensesBeforeSync(beforeMillis: Long): List<ExpenseWithCategory>
+
+    @Transaction
     @Query("SELECT * FROM expenses ORDER BY timestamp DESC")
     suspend fun getAllExpensesWithCategorySync(): List<ExpenseWithCategory>
 

@@ -300,6 +300,15 @@ fun HomeScreen(
                                     }
                                 )
                             }
+                            is DashboardTransactionItem.Repayment -> {
+                                RepaymentRowCard(
+                                    repayment = transactionItem,
+                                    currencySymbol = currencySymbol,
+                                    onEdit = {
+                                        splitToEdit = transactionItem.split
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -556,6 +565,13 @@ fun HomeHeaderCard(
                             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                             color = Color.White
                         )
+                        if (summary.carryoverBalance != 0.0) {
+                            Text(
+                                text = "Includes $currencySymbol${String.format(Locale.US, "%,.2f", summary.carryoverBalance)} from previous months",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = BrandGreen
+                            )
+                        }
                     }
 
                     // Button to Add Money or adjust budget (Brand Yellow with Navy text for high contrast)
@@ -1406,6 +1422,153 @@ fun FundRowCard(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Remove fund",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RepaymentRowCard(
+    repayment: DashboardTransactionItem.Repayment,
+    currencySymbol: String,
+    onEdit: () -> Unit = {}
+) {
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+    val split = repayment.split
+    val parentTitle = repayment.parentExpense.expense.title
+    val isLoan = parentTitle.startsWith("Lent to ", ignoreCase = true)
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable(onClick = onEdit)
+            .testTag("repayment_item_${split.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.tertiaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Handshake,
+                    contentDescription = "Split or Loan Return",
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = repayment.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Text(
+                            text = if (isLoan) "Loan Return" else "Split Return",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = split.repaymentMethod ?: "UPI",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    Text(
+                        text = " • ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+
+                    Text(
+                        text = timeFormat.format(Date(repayment.timestamp)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        text = " • ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+
+                    Text(
+                        text = parentTitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "+$currencySymbol${String.format(Locale.US, "%,.2f", repayment.amount)}",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Text(
+                    text = "Restored",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier
+                    .size(30.dp)
+                    .padding(start = 2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit repayment details",
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                     modifier = Modifier.size(16.dp)
                 )
             }

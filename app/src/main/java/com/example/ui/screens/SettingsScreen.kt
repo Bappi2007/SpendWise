@@ -457,7 +457,7 @@ fun SettingsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "SpendWise v1.1",
+                    text = "SpendWise v1.2",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -769,11 +769,20 @@ fun RestorePreviewDialog(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(text = "• Transactions: ${preview.expensesCount}", style = MaterialTheme.typography.bodySmall)
+                        if (preview.fundsCount > 0) {
+                            Text(
+                                text = "• Income / Funds: ${preview.fundsCount} (${preview.currencySymbol}${String.format(Locale.US, "%,.2f", preview.totalFundsAmount)})",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                         if (preview.splitsCount > 0) {
                             Text(text = "• Split Allocations: ${preview.splitsCount}", style = MaterialTheme.typography.bodySmall)
                         }
+                        if (preview.friendsCount > 0) {
+                            Text(text = "• Friends: ${preview.friendsCount}", style = MaterialTheme.typography.bodySmall)
+                        }
                         Text(text = "• Categories: ${preview.categoriesCount}", style = MaterialTheme.typography.bodySmall)
-                        Text(text = "• Total Value: ${preview.currencySymbol}${String.format(Locale.US, "%,.2f", preview.totalExpenseAmount)}", style = MaterialTheme.typography.bodySmall)
+                        Text(text = "• Total Expense Value: ${preview.currencySymbol}${String.format(Locale.US, "%,.2f", preview.totalExpenseAmount)}", style = MaterialTheme.typography.bodySmall)
                         if (preview.earliestExpenseDateEpoch != null && preview.latestExpenseDateEpoch != null) {
                             Text(
                                 text = "• Date Span: ${dateFormat.format(Date(preview.earliestExpenseDateEpoch))} - ${dateFormat.format(Date(preview.latestExpenseDateEpoch))}",
