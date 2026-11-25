@@ -53,18 +53,13 @@ class SeedingPersistenceTest {
     }
 
     @Test
-    fun `clearAllData keeps isSampleDataSeeded true so restart does not restore sample data`() = runBlocking {
-        // First initial seed
+    fun `seedInitialDataIfNeeded starts with zero default expenses and preserves subsequent user expenses`() = runBlocking {
+        // First initial launch -> purges any default sample data and leaves 0 expenses
         SampleDataSeeder.seedInitialDataIfNeeded(categoryDao, expenseDao, preferencesRepository)
-        val seededPref = preferencesRepository.getPreferencesSync().isSampleDataSeeded
-        val expenseCount = expenseDao.getExpensesCount()
-        assertTrue("Expected isSampleDataSeeded to be true, got $seededPref (expenses in db: $expenseCount)", seededPref)
-        assertTrue("Initial expenses must be seeded", expenseCount > 0)
-
-        // User clears data
-        expenseRepository.clearAllData()
+        val prefs = preferencesRepository.getPreferencesSync()
+        assertTrue(prefs.isSampleDataSeeded)
+        assertTrue(prefs.isDefaultSamplePurged)
         assertEquals(0, expenseDao.getExpensesCount())
-        assertTrue("isSampleDataSeeded must remain true after clearing all data", preferencesRepository.getPreferencesSync().isSampleDataSeeded)
 
         // User adds their own expense
         val userExpense = ExpenseEntity(
@@ -80,39 +75,10 @@ class SeedingPersistenceTest {
         // App restarts -> seedInitialDataIfNeeded is called again
         SampleDataSeeder.seedInitialDataIfNeeded(categoryDao, expenseDao, preferencesRepository)
 
-        // Verify that sample data was NOT re-seeded and only user expense remains
+        // Verify that the user's expense remains untouched
         val expensesAfterRestart = expenseDao.getAllRawExpensesSync()
         assertEquals(1, expensesAfterRestart.size)
         assertEquals("My Real Coffee", expensesAfterRestart.first().title)
         assertEquals(120.0, expensesAfterRestart.first().amount, 0.001)
-    }
-
-    @Test
-    fun `seedInitialDataIfNeeded never injects sample data when user expenses already exist`() = runBlocking {
-        // Reset preferences to unseeded state for test
-        preferencesRepository.setSampleDataSeeded(false)
-
-        // Seed categories only
-        categoryDao.insertCategories(SampleDataSeeder.getDefaultCategories())
-
-        // User already has a custom expense
-        val userExpense = ExpenseEntity(
-            title = "Freelance Client Lunch",
-            amount = 450.0,
-            categoryId = "cat_default_food",
-            timestamp = System.currentTimeMillis(),
-            paymentMethod = PaymentMethod.CARD.name
-        )
-        expenseDao.insertExpense(userExpense)
-        assertEquals(1, expenseDao.getExpensesCount())
-
-        // Launch app
-        SampleDataSeeder.seedInitialDataIfNeeded(categoryDao, expenseDao, preferencesRepository)
-
-        // Must still only have 1 expense, not 1 + 22 sample expenses
-        assertEquals(1, expenseDao.getExpensesCount())
-        val expenses = expenseDao.getAllRawExpensesSync()
-        assertEquals("Freelance Client Lunch", expenses.first().title)
-        assertTrue(preferencesRepository.getPreferencesSync().isSampleDataSeeded)
     }
 }

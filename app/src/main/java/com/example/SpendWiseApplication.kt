@@ -68,13 +68,15 @@ class SpendWiseApplication : Application() {
         super.onCreate()
         container = DefaultAppContainer(this)
 
-        // Seed initial categories and demo data asynchronously
+        // Ensure default categories exist and clear any default sample data
         applicationScope.launch {
             SampleDataSeeder.seedInitialDataIfNeeded(
                 categoryDao = container.database.categoryDao(),
                 expenseDao = container.database.expenseDao(),
                 preferencesRepository = container.preferencesRepository,
-                expenseSplitDao = container.database.expenseSplitDao()
+                expenseSplitDao = container.database.expenseSplitDao(),
+                friendDao = container.database.friendDao(),
+                fundDao = container.database.fundDao()
             )
         }
     }

@@ -205,17 +205,52 @@ class ExpenseViewModel(
         amountText: String,
         source: String,
         notes: String? = null,
-        paymentMethod: PaymentMethod = PaymentMethod.UPI
+        paymentMethod: PaymentMethod = PaymentMethod.UPI,
+        timestamp: Long = System.currentTimeMillis()
     ) {
         val amount = amountText.toDoubleOrNull()
         if (amount == null || amount <= 0) {
             emitSnackbar("Please enter a valid amount")
             return
         }
-        val displayTitle = if (title.isBlank()) source else title
+        val cleanSource = source.trim().ifBlank { "From Parents" }
+        val displayTitle = if (title.isBlank()) cleanSource else title
         viewModelScope.launch {
-            repository.insertFund(displayTitle, amount, source, notes = notes, paymentMethod = paymentMethod.name)
-            emitSnackbar("Added $amount to ${paymentMethod.name} funds ($source)")
+            repository.insertFund(
+                title = displayTitle,
+                amount = amount,
+                source = cleanSource,
+                timestamp = timestamp,
+                notes = notes,
+                paymentMethod = paymentMethod.name
+            )
+            emitSnackbar("Added $amount to ${paymentMethod.name} funds ($cleanSource)")
+        }
+    }
+
+    fun updateFund(fund: FundEntity) {
+        if (fund.amount <= 0) {
+            emitSnackbar("Please enter a valid amount")
+            return
+        }
+        viewModelScope.launch {
+            repository.updateFund(fund)
+            emitSnackbar("Updated money received details (${fund.paymentMethod})")
+        }
+    }
+
+    fun updateSplitDetails(split: ExpenseSplitEntity) {
+        if (split.allocatedAmount <= 0) {
+            emitSnackbar("Please enter a valid amount")
+            return
+        }
+        if (split.personName.isBlank()) {
+            emitSnackbar("Please enter friend's name")
+            return
+        }
+        viewModelScope.launch {
+            repository.updateSplit(split)
+            emitSnackbar("Updated repayment details for ${split.personName}")
         }
     }
 

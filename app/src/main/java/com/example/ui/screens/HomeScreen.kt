@@ -130,6 +130,8 @@ fun HomeScreen(
     var isSettlementSummaryOpen by remember { mutableStateOf(false) }
     var expenseToDeleteWithConfirm by remember { mutableStateOf<ExpenseWithCategory?>(null) }
     var fundToDeleteWithConfirm by remember { mutableStateOf<FundEntity?>(null) }
+    var fundToEdit by remember { mutableStateOf<FundEntity?>(null) }
+    var splitToEdit by remember { mutableStateOf<ExpenseSplitEntity?>(null) }
 
     val userPrefs by viewModel.userPreferences.collectAsStateWithLifecycle()
     val settlementOverview by viewModel.settlementOverview.collectAsStateWithLifecycle()
@@ -290,6 +292,9 @@ fun HomeScreen(
                                 DashboardFundItem(
                                     fund = transactionItem.fund,
                                     currencySymbol = currencySymbol,
+                                    onEdit = {
+                                        fundToEdit = transactionItem.fund
+                                    },
                                     onDelete = {
                                         fundToDeleteWithConfirm = transactionItem.fund
                                     }
@@ -340,15 +345,22 @@ fun HomeScreen(
 
     // Interactive Split Details & Settlement Dialog for an Expense
     expenseToViewSplits?.let { item ->
+        val liveItem = groupedExpenses
+            .asSequence()
+            .flatMap { it.expenses }
+            .firstOrNull { it.expense.id == item.expense.id } ?: item
         SplitSettlementDialog(
-            item = item,
+            item = liveItem,
             currencySymbol = currencySymbol,
             onDismiss = { expenseToViewSplits = null },
             onTogglePaid = { splitId, isPaid, method ->
                 viewModel.toggleSplitPaidStatus(splitId, isPaid, method)
             },
+            onEditSplit = { split ->
+                splitToEdit = split
+            },
             onEditExpense = {
-                expenseToEdit = item
+                expenseToEdit = liveItem
                 expenseToViewSplits = null
                 isAddSheetVisible = true
             }
@@ -364,6 +376,9 @@ fun HomeScreen(
             onDismiss = { isSettlementSummaryOpen = false },
             onTogglePaid = { splitId, isPaid, method ->
                 viewModel.toggleSplitPaidStatus(splitId, isPaid, method)
+            },
+            onEditSplit = { split ->
+                splitToEdit = split
             },
             onAddFriend = { name ->
                 viewModel.addFriend(name)
@@ -391,8 +406,11 @@ fun HomeScreen(
             categoryBudgets = userPrefs.categoryBudgets,
             funds = allFunds,
             isMonthlyLimitEnabled = userPrefs.isMonthlyLimitEnabled,
-            onAddFund = { title, amt, src, notes, method ->
-                viewModel.addFund(title, amt, src, notes, method)
+            onAddFund = { title, amt, src, notes, method, timestamp ->
+                viewModel.addFund(title, amt, src, notes, method, timestamp)
+            },
+            onUpdateFund = { updatedFund ->
+                viewModel.updateFund(updatedFund)
             },
             onDeleteFund = { fund ->
                 viewModel.deleteFund(fund)
@@ -410,6 +428,36 @@ fun HomeScreen(
             },
             onSaveCategoryBudget = { catId, limit ->
                 viewModel.setCategoryBudget(catId, limit)
+            }
+        )
+    }
+
+    // Edit Money Received (Fund) Dialog
+    fundToEdit?.let { fund ->
+        com.example.ui.components.EditFundDialog(
+            fund = fund,
+            currencySymbol = currencySymbol,
+            onDismiss = { fundToEdit = null },
+            onSave = { updatedFund ->
+                viewModel.updateFund(updatedFund)
+                fundToEdit = null
+            },
+            onDelete = { toDelete ->
+                fundToEdit = null
+                fundToDeleteWithConfirm = toDelete
+            }
+        )
+    }
+
+    // Edit Split / Loan Repayment Details Dialog
+    splitToEdit?.let { split ->
+        com.example.ui.components.EditRepaymentSplitDialog(
+            split = split,
+            currencySymbol = currencySymbol,
+            onDismiss = { splitToEdit = null },
+            onSave = { updatedSplit ->
+                viewModel.updateSplitDetails(updatedSplit)
+                splitToEdit = null
             }
         )
     }
@@ -1151,6 +1199,7 @@ fun ExpenseRowCard(
 fun DashboardFundItem(
     fund: FundEntity,
     currencySymbol: String,
+    onEdit: () -> Unit = {},
     onDelete: () -> Unit
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
@@ -1197,6 +1246,7 @@ fun DashboardFundItem(
         FundRowCard(
             fund = fund,
             currencySymbol = currencySymbol,
+            onEdit = onEdit,
             onDelete = onDelete
         )
     }
@@ -1206,6 +1256,7 @@ fun DashboardFundItem(
 fun FundRowCard(
     fund: FundEntity,
     currencySymbol: String,
+    onEdit: () -> Unit = {},
     onDelete: () -> Unit
 ) {
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
@@ -1219,6 +1270,7 @@ fun FundRowCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable(onClick = onEdit)
             .testTag("fund_item_${fund.id}")
     ) {
         Row(
@@ -1331,10 +1383,24 @@ fun FundRowCard(
             }
 
             IconButton(
+                onClick = onEdit,
+                modifier = Modifier
+                    .size(30.dp)
+                    .padding(start = 2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit fund details",
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            IconButton(
                 onClick = onDelete,
                 modifier = Modifier
-                    .size(32.dp)
-                    .padding(start = 4.dp)
+                    .size(30.dp)
+                    .padding(start = 2.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
@@ -1353,6 +1419,7 @@ fun SplitSettlementDialog(
     currencySymbol: String,
     onDismiss: () -> Unit,
     onTogglePaid: (splitId: String, isPaid: Boolean, repaymentMethod: PaymentMethod) -> Unit,
+    onEditSplit: (ExpenseSplitEntity) -> Unit = {},
     onEditExpense: () -> Unit
 ) {
     var receiveMedium by remember { mutableStateOf(PaymentMethod.UPI) }
@@ -1475,16 +1542,21 @@ fun SplitSettlementDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                LazyColumn(modifier = Modifier.height((item.splits.size * 56).coerceAtMost(220).dp)) {
+                val settledDateFormat = remember { SimpleDateFormat("dd MMM", Locale.getDefault()) }
+                LazyColumn(modifier = Modifier.height((item.splits.size * 60).coerceAtMost(230).dp)) {
                     items(items = item.splits, key = { it.id }) { split ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clickable { onEditSplit(split) }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Checkbox(
                                     checked = split.isPaid,
                                     onCheckedChange = { checked ->
@@ -1501,21 +1573,35 @@ fun SplitSettlementDialog(
                                         ),
                                         color = if (split.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                     )
+                                    val dateSuffix = split.settledTimestamp?.let { " • ${settledDateFormat.format(Date(it))}" } ?: ""
                                     Text(
-                                        text = if (split.isPaid) "Paid back (${split.repaymentMethod ?: "UPI"})" else "Unpaid",
+                                        text = if (split.isPaid) "Paid back (${split.repaymentMethod ?: "UPI"})$dateSuffix" else "Unpaid • Tap to edit",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (split.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                                     )
                                 }
                             }
 
-                            Text(
-                                text = "$currencySymbol${String.format(Locale.US, "%,.2f", split.allocatedAmount)}",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = if (split.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "$currencySymbol${String.format(Locale.US, "%,.2f", split.allocatedAmount)}",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = if (split.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                                IconButton(
+                                    onClick = { onEditSplit(split) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit repayment details",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1556,6 +1642,7 @@ fun SettlementSummaryDialog(
     currencySymbol: String,
     onDismiss: () -> Unit,
     onTogglePaid: (splitId: String, isPaid: Boolean, repaymentMethod: PaymentMethod) -> Unit,
+    onEditSplit: (ExpenseSplitEntity) -> Unit = {},
     onAddFriend: (String) -> Unit,
     onRemoveFriend: (FriendEntity) -> Unit
 ) {
@@ -1765,15 +1852,20 @@ fun SettlementSummaryDialog(
 
                                             Spacer(modifier = Modifier.height(6.dp))
 
+                                            val settledDateFormat = remember { SimpleDateFormat("dd MMM", Locale.getDefault()) }
                                             person.splits.forEach { sp ->
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
+                                                        .clickable { onEditSplit(sp) }
                                                         .padding(vertical = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
                                                         Checkbox(
                                                             checked = sp.isPaid,
                                                             onCheckedChange = { checked ->
@@ -1781,17 +1873,31 @@ fun SettlementSummaryDialog(
                                                             },
                                                             colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                                                         )
+                                                        val dateSuffix = sp.settledTimestamp?.let { " • ${settledDateFormat.format(Date(it))}" } ?: ""
                                                         Text(
-                                                            text = if (sp.isPaid) "Settled (${sp.repaymentMethod ?: "UPI"})" else "Pending",
+                                                            text = if (sp.isPaid) "Settled (${sp.repaymentMethod ?: "UPI"})$dateSuffix" else "Pending",
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = if (sp.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
                                                     }
 
-                                                    Text(
-                                                        text = "$currencySymbol${String.format(Locale.US, "%,.2f", sp.allocatedAmount)}",
-                                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
-                                                    )
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(
+                                                            text = "$currencySymbol${String.format(Locale.US, "%,.2f", sp.allocatedAmount)}",
+                                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+                                                        )
+                                                        IconButton(
+                                                            onClick = { onEditSplit(sp) },
+                                                            modifier = Modifier.size(26.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Edit,
+                                                                contentDescription = "Edit repayment details",
+                                                                tint = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }

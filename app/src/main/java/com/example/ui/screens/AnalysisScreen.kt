@@ -287,8 +287,11 @@ fun AnalysisScreen(
             categoryBudgets = userPrefs.categoryBudgets,
             funds = allFunds,
             isMonthlyLimitEnabled = userPrefs.isMonthlyLimitEnabled,
-            onAddFund = { title, amountText, source, notes, paymentMethod ->
-                viewModel.addFund(title, amountText, source, notes, paymentMethod)
+            onAddFund = { title, amountText, source, notes, paymentMethod, timestamp ->
+                viewModel.addFund(title, amountText, source, notes, paymentMethod, timestamp)
+            },
+            onUpdateFund = { updatedFund ->
+                viewModel.updateFund(updatedFund)
             },
             onDeleteFund = { fund ->
                 viewModel.deleteFund(fund)

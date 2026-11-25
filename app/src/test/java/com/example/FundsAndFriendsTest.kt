@@ -467,4 +467,73 @@ class FundsAndFriendsTest {
         assertEquals(4500.0, summary.upiRemaining, 0.001)
         assertEquals(3000.0, summary.cashRemaining, 0.001)
     }
+
+    @Test
+    fun `updateFund and updateSplit allow editing source, medium (Cash or UPI), date, amount, and notes`() = runBlocking {
+        val now = System.currentTimeMillis()
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = now }
+        val year = cal.get(java.util.Calendar.YEAR)
+        val month = cal.get(java.util.Calendar.MONTH) + 1
+
+        val repository = com.example.data.repository.ExpenseRepository(
+            expenseDao = expenseDao,
+            categoryDao = database.categoryDao(),
+            preferencesRepository = com.example.data.preferences.UserPreferencesRepository(context),
+            expenseSplitDao = database.expenseSplitDao(),
+            friendDao = friendDao,
+            fundDao = fundDao
+        )
+
+        val initialFund = repository.insertFund(
+            title = "Allowance",
+            amount = 5000.0,
+            source = "From Parents",
+            timestamp = now - 86_400_000L,
+            notes = "Initial note",
+            paymentMethod = PaymentMethod.UPI.name
+        )
+
+        // Edit the fund: change medium from UPI to CASH, source to "Dad", amount to 5500, and timestamp to now
+        val editedFund = initialFund.copy(
+            title = "Cash from Dad",
+            amount = 5500.0,
+            source = "Dad",
+            timestamp = now,
+            notes = "Handed in cash",
+            paymentMethod = PaymentMethod.CASH.name
+        )
+        repository.updateFund(editedFund)
+
+        val fetchedFunds = repository.getAllFundsSync()
+        assertEquals(1, fetchedFunds.size)
+        assertEquals("Dad", fetchedFunds[0].source)
+        assertEquals("Cash from Dad", fetchedFunds[0].title)
+        assertEquals(5500.0, fetchedFunds[0].amount, 0.001)
+        assertEquals(PaymentMethod.CASH.name, fetchedFunds[0].paymentMethod)
+        assertEquals(now, fetchedFunds[0].timestamp)
+
+        // Lend money and then edit repayment details
+        val (_, split) = repository.lendMoneyToFriend(
+            friendName = "Amit",
+            amount = 1000.0,
+            paymentMethod = PaymentMethod.CASH,
+            notes = "Lunch",
+            timestamp = now
+        )
+        val editedSplit = split.copy(
+            personName = "Amit Kumar",
+            allocatedAmount = 1000.0,
+            isPaid = true,
+            settledTimestamp = now,
+            repaymentMethod = PaymentMethod.UPI.name
+        )
+        repository.updateSplit(editedSplit)
+
+        val summary = repository.calculateMonthSummary(year, month, 10000.0)
+        // 5500 Cash income - 1000 Cash lent = 4500 Cash remaining; 1000 repaid via UPI = 1000 UPI remaining
+        assertEquals(5500.0, summary.totalIncome, 0.001)
+        assertEquals(4500.0, summary.cashRemaining, 0.001)
+        assertEquals(1000.0, summary.upiRemaining, 0.001)
+    }
 }
+

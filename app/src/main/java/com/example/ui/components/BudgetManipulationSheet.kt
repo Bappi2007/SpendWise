@@ -52,12 +52,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -71,6 +75,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarToday
 import com.example.data.model.CategoryEntity
 import com.example.data.model.CategorySpending
 import com.example.data.model.FundEntity
@@ -100,7 +105,8 @@ fun BudgetManipulationSheet(
     categoryBudgets: Map<String, Double>,
     funds: List<FundEntity> = emptyList(),
     isMonthlyLimitEnabled: Boolean = false,
-    onAddFund: ((title: String, amountText: String, source: String, notes: String?, paymentMethod: PaymentMethod) -> Unit)? = null,
+    onAddFund: ((title: String, amountText: String, source: String, notes: String?, paymentMethod: PaymentMethod, timestamp: Long) -> Unit)? = null,
+    onUpdateFund: ((FundEntity) -> Unit)? = null,
     onDeleteFund: ((FundEntity) -> Unit)? = null,
     onToggleMonthlyLimit: ((Boolean) -> Unit)? = null,
     onDismiss: () -> Unit,
@@ -109,6 +115,7 @@ fun BudgetManipulationSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember { mutableIntStateOf(0) } // 0: My Funds, 1: Monthly Budget, 2: Category Targets
+    var fundToEdit by remember { mutableStateOf<FundEntity?>(null) }
 
     var tempBudget by remember { mutableDoubleStateOf(currentBudget) }
     var applyToMonthOnly by remember { mutableStateOf(false) }
@@ -213,9 +220,12 @@ fun BudgetManipulationSheet(
                 var newFundSource by remember { mutableStateOf("From Parents") }
                 var newFundNote by remember { mutableStateOf("") }
                 var selectedMedium by remember { mutableStateOf(PaymentMethod.UPI) }
+                var newFundTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                var showAddFundDatePicker by remember { mutableStateOf(false) }
                 var fundAmountError by remember { mutableStateOf<String?>(null) }
 
                 val sourcePresets = listOf("From Parents", "Earned", "Pocket Money", "Gift", "Salary", "Other")
+                val shortDateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.getDefault()) }
 
                 val totalAdded = if (funds.isNotEmpty()) funds.sumOf { it.amount } else currentBudget
                 val availBalance = totalAdded - monthSpent
@@ -291,7 +301,7 @@ fun BudgetManipulationSheet(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Add whatever you received and select the medium of income (UPI or Cash).",
+                            text = "Add whatever you received and select the medium of income (UPI or Cash), source, and date.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -352,7 +362,7 @@ fun BudgetManipulationSheet(
                         Spacer(modifier = Modifier.height(10.dp))
 
                         Text(
-                            text = "Source:",
+                            text = "From / Source:",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -368,6 +378,63 @@ fun BudgetManipulationSheet(
                                     label = { Text(src, style = MaterialTheme.typography.labelSmall) }
                                 )
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedTextField(
+                            value = newFundSource,
+                            onValueChange = { newFundSource = it },
+                            label = { Text("Received From (Source or Person)") },
+                            placeholder = { Text("e.g. From Parents, Dad, Freelance") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "Date Received:",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val nowMillis = System.currentTimeMillis()
+                            val yesterdayMillis = remember {
+                                Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }.timeInMillis
+                            }
+                            FilterChip(
+                                selected = isSameDay(newFundTimestamp, nowMillis),
+                                onClick = { newFundTimestamp = System.currentTimeMillis() },
+                                label = { Text("Today", style = MaterialTheme.typography.labelSmall) }
+                            )
+                            FilterChip(
+                                selected = isSameDay(newFundTimestamp, yesterdayMillis),
+                                onClick = { newFundTimestamp = yesterdayMillis },
+                                label = { Text("Yesterday", style = MaterialTheme.typography.labelSmall) }
+                            )
+                            FilterChip(
+                                selected = !isSameDay(newFundTimestamp, nowMillis) && !isSameDay(newFundTimestamp, yesterdayMillis),
+                                onClick = { showAddFundDatePicker = true },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarToday,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = shortDateFormat.format(Date(newFundTimestamp)),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -390,12 +457,14 @@ fun BudgetManipulationSheet(
                                 if (amount == null || amount <= 0) {
                                     fundAmountError = "Please enter an amount > 0"
                                 } else {
+                                    val cleanSource = newFundSource.trim().ifBlank { "From Parents" }
                                     onAddFund?.invoke(
-                                        newFundNote.ifBlank { newFundSource },
+                                        newFundNote.ifBlank { cleanSource },
                                         newFundAmountText,
-                                        newFundSource,
+                                        cleanSource,
                                         newFundNote.ifBlank { null },
-                                        selectedMedium
+                                        selectedMedium,
+                                        newFundTimestamp
                                     )
                                     newFundAmountText = ""
                                     newFundNote = ""
@@ -411,13 +480,52 @@ fun BudgetManipulationSheet(
                     }
                 }
 
+                if (showAddFundDatePicker) {
+                    val pickerState = rememberDatePickerState(initialSelectedDateMillis = newFundTimestamp)
+                    DatePickerDialog(
+                        onDismissRequest = { showAddFundDatePicker = false },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    pickerState.selectedDateMillis?.let { pickedUtc ->
+                                        newFundTimestamp = mergeDatePreservingTime(pickedUtc, newFundTimestamp)
+                                    }
+                                    showAddFundDatePicker = false
+                                }
+                            ) {
+                                Text("OK", fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showAddFundDatePicker = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    ) {
+                        DatePicker(state = pickerState)
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Inflow History
-                Text(
-                    text = "Money Received History:",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Money Received History:",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    if (funds.isNotEmpty()) {
+                        Text(
+                            text = "Tap any entry to edit",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (funds.isEmpty()) {
@@ -434,7 +542,7 @@ fun BudgetManipulationSheet(
                         )
                     }
                 } else {
-                    val dateFormat = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+                    val dateFormat = remember { SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()) }
                     funds.forEach { fund ->
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -442,6 +550,8 @@ fun BudgetManipulationSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
+                                .clickable { fundToEdit = fund }
+                                .testTag("history_fund_item_${fund.id}")
                         ) {
                             Row(
                                 modifier = Modifier
@@ -491,7 +601,18 @@ fun BudgetManipulationSheet(
                                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                         color = Emerald700
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = { fundToEdit = fund },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit Fund Entry",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                     IconButton(
                                         onClick = { onDeleteFund?.invoke(fund) },
                                         modifier = Modifier.size(28.dp)
@@ -958,6 +1079,19 @@ fun BudgetManipulationSheet(
                 }
             }
         }
+    }
+
+    fundToEdit?.let { fund ->
+        EditFundDialog(
+            fund = fund,
+            currencySymbol = currencySymbol,
+            onDismiss = { fundToEdit = null },
+            onSave = { updatedFund ->
+                onUpdateFund?.invoke(updatedFund)
+                fundToEdit = null
+            },
+            onDelete = onDeleteFund
+        )
     }
 }
 

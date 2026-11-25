@@ -121,13 +121,29 @@ class AnalysisViewModel(
         amountText: String,
         source: String,
         notes: String? = null,
-        paymentMethod: com.example.data.model.PaymentMethod = com.example.data.model.PaymentMethod.UPI
+        paymentMethod: com.example.data.model.PaymentMethod = com.example.data.model.PaymentMethod.UPI,
+        timestamp: Long = System.currentTimeMillis()
     ) {
         val amount = amountText.toDoubleOrNull() ?: return
         if (amount <= 0) return
-        val displayTitle = if (title.isBlank()) source else title
+        val cleanSource = source.trim().ifBlank { "From Parents" }
+        val displayTitle = if (title.isBlank()) cleanSource else title
         viewModelScope.launch {
-            repository.insertFund(displayTitle, amount, source, notes = notes, paymentMethod = paymentMethod.name)
+            repository.insertFund(
+                title = displayTitle,
+                amount = amount,
+                source = cleanSource,
+                timestamp = timestamp,
+                notes = notes,
+                paymentMethod = paymentMethod.name
+            )
+        }
+    }
+
+    fun updateFund(fund: FundEntity) {
+        if (fund.amount <= 0) return
+        viewModelScope.launch {
+            repository.updateFund(fund)
         }
     }
 

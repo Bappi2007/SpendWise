@@ -21,10 +21,11 @@ data class UserPreferences(
     val themeMode: String = "SYSTEM",
     val monthlyBudget: Double = 0.0,
     val lastBackupTimestamp: Long = 0L,
-    val isSampleDataSeeded: Boolean = false,
+    val isSampleDataSeeded: Boolean = true,
     val categoryBudgets: Map<String, Double> = emptyMap(),
     val monthBudgets: Map<String, Double> = emptyMap(),
-    val isMonthlyLimitEnabled: Boolean = false
+    val isMonthlyLimitEnabled: Boolean = false,
+    val isDefaultSamplePurged: Boolean = false
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -38,6 +39,7 @@ class UserPreferencesRepository(private val context: Context) {
         val CATEGORY_BUDGETS_JSON = stringPreferencesKey("category_budgets_json")
         val MONTH_BUDGETS_JSON = stringPreferencesKey("month_budgets_json")
         val IS_MONTHLY_LIMIT_ENABLED = booleanPreferencesKey("is_monthly_limit_enabled")
+        val IS_DEFAULT_SAMPLE_PURGED = booleanPreferencesKey("is_default_sample_purged")
     }
 
     @Volatile
@@ -55,10 +57,11 @@ class UserPreferencesRepository(private val context: Context) {
             themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "SYSTEM",
             monthlyBudget = preferences[PreferencesKeys.MONTHLY_BUDGET] ?: 0.0,
             lastBackupTimestamp = preferences[PreferencesKeys.LAST_BACKUP_TIMESTAMP] ?: 0L,
-            isSampleDataSeeded = preferences[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] ?: false,
+            isSampleDataSeeded = preferences[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] ?: true,
             categoryBudgets = catMap,
             monthBudgets = monthMap,
-            isMonthlyLimitEnabled = preferences[PreferencesKeys.IS_MONTHLY_LIMIT_ENABLED] ?: false
+            isMonthlyLimitEnabled = preferences[PreferencesKeys.IS_MONTHLY_LIMIT_ENABLED] ?: false,
+            isDefaultSamplePurged = preferences[PreferencesKeys.IS_DEFAULT_SAMPLE_PURGED] ?: false
         )
     }
 
@@ -139,8 +142,20 @@ class UserPreferencesRepository(private val context: Context) {
         cachedPreferences = mapPreferences(updated)
     }
 
+    suspend fun setDefaultSamplePurged(purged: Boolean) {
+        val updated = context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.IS_DEFAULT_SAMPLE_PURGED] = purged
+            preferences[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] = true
+        }
+        cachedPreferences = mapPreferences(updated)
+    }
+
     suspend fun clearSettings() {
-        val updated = context.dataStore.edit { it.clear() }
+        val updated = context.dataStore.edit {
+            it.clear()
+            it[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] = true
+            it[PreferencesKeys.IS_DEFAULT_SAMPLE_PURGED] = true
+        }
         cachedPreferences = mapPreferences(updated)
     }
 

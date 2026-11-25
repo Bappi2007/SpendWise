@@ -542,6 +542,15 @@ class ExpenseRepository(
         return fund
     }
 
+    suspend fun updateFund(fund: FundEntity) {
+        fundDao?.updateFund(fund)
+    }
+
+    suspend fun updateSplit(split: ExpenseSplitEntity) {
+        expenseSplitDao?.updateSplit(split)
+        fundDao?.deleteFundById("repay_split_${split.id}")
+    }
+
     suspend fun deleteFund(fund: FundEntity) {
         fundDao?.deleteFund(fund)
     }
