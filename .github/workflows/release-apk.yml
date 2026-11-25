@@ -36,107 +36,104 @@ jobs:
             cp .env.example .env || touch .env
           fi
 
-      - name: Configure signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
-          RAW_STORE_PASS: ${{ secrets.STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || '' }}
-          RAW_KEY_PASS: ${{ secrets.KEY_PASSWORD || secrets.STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || '' }}
-          RAW_KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'upload' }}
+      - name: Prepare debug keystore for debugConfig initialization
         run: |
-          mkdir -p app
-          rm -f app/release-key.jks app/raw-secret-key.jks
           if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
             base64 --decode debug.keystore.base64 > debug.keystore
           fi
 
-          VALID_SECRET_KEYSTORE="false"
+      - name: Prepare and validate permanent release signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
 
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "Decoding provided signing keystore from GitHub Secrets..."
-            if printf '%s' "$KEYSTORE_BASE64" | tr -d ' \t\r\n' | base64 --decode > app/raw-secret-key.jks 2>/dev/null && [ -s app/raw-secret-key.jks ]; then
-              for SPASS in "$RAW_STORE_PASS" "$RAW_KEY_PASS" "android"; do
-                [ -z "$SPASS" ] && continue
-                if keytool -list -keystore app/raw-secret-key.jks -storepass "$SPASS" >/dev/null 2>&1; then
-                  DETECTED_ALIAS=""
-                  if keytool -list -keystore app/raw-secret-key.jks -storepass "$SPASS" -alias "$RAW_KEY_ALIAS" >/dev/null 2>&1; then
-                    DETECTED_ALIAS="$RAW_KEY_ALIAS"
-                  elif keytool -list -keystore app/raw-secret-key.jks -storepass "$SPASS" -alias "upload" >/dev/null 2>&1; then
-                    DETECTED_ALIAS="upload"
-                  else
-                    DETECTED_ALIAS=$(keytool -list -v -keystore app/raw-secret-key.jks -storepass "$SPASS" 2>/dev/null | awk -F': ' '/Alias name:/{alias=$2} /Entry type:.*PrivateKeyEntry/{print alias; exit}' | tr -d '\r')
-                  fi
-
-                  if [ -n "$DETECTED_ALIAS" ]; then
-                    for KPASS in "$RAW_KEY_PASS" "$SPASS" "$RAW_STORE_PASS" "android"; do
-                      [ -z "$KPASS" ] && continue
-                      rm -f app/release-key.jks
-                      if keytool -importkeystore \
-                        -srckeystore app/raw-secret-key.jks \
-                        -destkeystore app/release-key.jks \
-                        -deststoretype PKCS12 \
-                        -srcalias "$DETECTED_ALIAS" \
-                        -destalias upload \
-                        -srcstorepass "$SPASS" \
-                        -deststorepass "$KPASS" \
-                        -srckeypass "$KPASS" \
-                        -destkeypass "$KPASS" \
-                        -noprompt >/dev/null 2>&1; then
-                        echo "Verified production keystore (source alias: $DETECTED_ALIAS -> normalized alias: upload)."
-                        echo "STORE_PASSWORD=$KPASS" >> "$GITHUB_ENV"
-                        echo "KEY_PASSWORD=$KPASS" >> "$GITHUB_ENV"
-                        VALID_SECRET_KEYSTORE="true"
-                        break 2
-                      fi
-                    done
-                  fi
-                fi
-              done
-            fi
-            rm -f app/raw-secret-key.jks
-            if [ "$VALID_SECRET_KEYSTORE" != "true" ]; then
-              echo "::warning::SIGNING_KEYSTORE_BASE64 could not be decoded or its private key password/alias did not match STORE_PASSWORD / KEY_PASSWORD. Falling back to deterministic project keystore."
-            fi
+          MISSING=0
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Missing required GitHub Secret: ANDROID_KEYSTORE_BASE64"
+            MISSING=1
+          fi
+          if [ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ]; then
+            echo "::error::Missing required GitHub Secret: ANDROID_KEYSTORE_PASSWORD"
+            MISSING=1
+          fi
+          if [ -z "${ANDROID_KEY_ALIAS:-}" ]; then
+            echo "::error::Missing required GitHub Secret: ANDROID_KEY_ALIAS"
+            MISSING=1
+          fi
+          if [ -z "${ANDROID_KEY_PASSWORD:-}" ]; then
+            echo "::error::Missing required GitHub Secret: ANDROID_KEY_PASSWORD"
+            MISSING=1
+          fi
+          if [ "$MISSING" -ne 0 ]; then
+            exit 1
           fi
 
-          if [ "$VALID_SECRET_KEYSTORE" != "true" ]; then
-            rm -f app/release-key.jks
-            if [ -f debug.keystore ]; then
-              echo "Deriving deterministic release keystore from project debug.keystore so in-place Android APK updates work seamlessly across versions..."
-              keytool -importkeystore \
-                -srckeystore debug.keystore \
-                -destkeystore app/release-key.jks \
-                -deststoretype PKCS12 \
-                -srcalias androiddebugkey \
-                -destalias upload \
-                -srcstorepass android \
-                -deststorepass android \
-                -srckeypass android \
-                -destkeypass android \
-                -noprompt
-              echo "STORE_PASSWORD=android" >> "$GITHUB_ENV"
-              echo "KEY_PASSWORD=android" >> "$GITHUB_ENV"
-            else
-              echo "::warning::SIGNING_KEYSTORE_BASE64 secret not found. Generating self-signed keystore for CI build validation..."
-              keytool -genkeypair -v \
-                -keystore app/release-key.jks \
-                -storetype PKCS12 \
-                -alias upload \
-                -keyalg RSA \
-                -keysize 2048 \
-                -validity 10000 \
-                -storepass android \
-                -keypass android \
-                -dname "CN=SpendWise, OU=Android, O=SpendWise, L=Bengaluru, S=KA, C=IN" \
-                -noprompt
-              echo "STORE_PASSWORD=android" >> "$GITHUB_ENV"
-              echo "KEY_PASSWORD=android" >> "$GITHUB_ENV"
-            fi
+          mkdir -p app
+          rm -f app/raw-upload-key.jks app/release-key.jks
+
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d ' \t\r\n' | base64 --decode > app/raw-upload-key.jks; then
+            echo "::error::Failed to base64-decode ANDROID_KEYSTORE_BASE64."
+            rm -f app/raw-upload-key.jks
+            exit 1
           fi
+
+          if [ ! -s app/raw-upload-key.jks ]; then
+            echo "::error::Decoded keystore file is empty."
+            rm -f app/raw-upload-key.jks
+            exit 1
+          fi
+
+          if ! keytool -list -keystore app/raw-upload-key.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Keystore validation failed: unable to read alias specified by ANDROID_KEY_ALIAS using ANDROID_KEYSTORE_PASSWORD."
+            rm -f app/raw-upload-key.jks
+            exit 1
+          fi
+
+          # Normalize the validated private key entry into app/release-key.jks under alias 'upload'
+          # so app/build.gradle.kts signingConfigs.release can read it deterministically.
+          if ! keytool -importkeystore \
+            -srckeystore app/raw-upload-key.jks \
+            -destkeystore app/release-key.jks \
+            -deststoretype JKS \
+            -srcalias "$ANDROID_KEY_ALIAS" \
+            -destalias upload \
+            -srcstorepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -deststorepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -srckeypass "$ANDROID_KEY_PASSWORD" \
+            -destkeypass "$ANDROID_KEY_PASSWORD" \
+            -noprompt >/dev/null 2>&1; then
+            echo "::error::Failed to unlock private key using ANDROID_KEY_PASSWORD for the configured ANDROID_KEY_ALIAS."
+            rm -f app/raw-upload-key.jks app/release-key.jks
+            exit 1
+          fi
+
+          rm -f app/raw-upload-key.jks
+          echo "Permanent release keystore validated and prepared successfully."
 
       - name: Build signed Release APK
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/app/release-key.jks
-        run: ./gradlew assembleRelease
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Verify Release APK signature
+        run: |
+          set -euo pipefail
+          RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 2 -name "*.apk" | head -n 1)
+          if [ -z "$RELEASE_APK" ] || [ ! -f "$RELEASE_APK" ]; then
+            echo "::error::Release APK was not found in app/build/outputs/apk/release/"
+            exit 1
+          fi
+          if ! keytool -printcert -jarfile "$RELEASE_APK" | grep -q "Owner:"; then
+            echo "::error::Release APK signature verification failed."
+            exit 1
+          fi
+          echo "Verified signed Release APK: $RELEASE_APK"
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
@@ -146,6 +143,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Remove signing keystore
+      - name: Remove temporary signing keystores
         if: always()
-        run: rm -f app/release-key.jks
+        run: |
+          rm -f app/raw-upload-key.jks app/release-key.jks
+          git checkout -- debug.keystore 2>/dev/null || rm -f debug.keystore
