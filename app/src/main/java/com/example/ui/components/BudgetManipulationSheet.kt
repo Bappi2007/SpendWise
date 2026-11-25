@@ -74,6 +74,9 @@ import androidx.compose.material.icons.filled.Add
 import com.example.data.model.CategoryEntity
 import com.example.data.model.CategorySpending
 import com.example.data.model.FundEntity
+import com.example.data.model.PaymentMethod
+import androidx.compose.material.icons.filled.Money
+import androidx.compose.material.icons.filled.QrCode
 import com.example.ui.common.CategoryIconBadge
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.Emerald700
@@ -97,7 +100,7 @@ fun BudgetManipulationSheet(
     categoryBudgets: Map<String, Double>,
     funds: List<FundEntity> = emptyList(),
     isMonthlyLimitEnabled: Boolean = false,
-    onAddFund: ((title: String, amountText: String, source: String, notes: String?) -> Unit)? = null,
+    onAddFund: ((title: String, amountText: String, source: String, notes: String?, paymentMethod: PaymentMethod) -> Unit)? = null,
     onDeleteFund: ((FundEntity) -> Unit)? = null,
     onToggleMonthlyLimit: ((Boolean) -> Unit)? = null,
     onDismiss: () -> Unit,
@@ -209,6 +212,7 @@ fun BudgetManipulationSheet(
                 var newFundAmountText by remember { mutableStateOf("") }
                 var newFundSource by remember { mutableStateOf("From Parents") }
                 var newFundNote by remember { mutableStateOf("") }
+                var selectedMedium by remember { mutableStateOf(PaymentMethod.UPI) }
                 var fundAmountError by remember { mutableStateOf<String?>(null) }
 
                 val sourcePresets = listOf("From Parents", "Earned", "Pocket Money", "Gift", "Salary", "Other")
@@ -287,7 +291,7 @@ fun BudgetManipulationSheet(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Add whatever you received as you wish, with no rigid range or limits.",
+                            text = "Add whatever you received and select the medium of income (UPI or Cash).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -309,6 +313,41 @@ fun BudgetManipulationSheet(
                             shape = RoundedCornerShape(12.dp),
                             singleLine = true
                         )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "Medium of Income (Cash or UPI):",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(PaymentMethod.UPI, PaymentMethod.CASH).forEach { method ->
+                                val isSelected = selectedMedium == method
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { selectedMedium = method },
+                                    label = { Text(method.displayName, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (method == PaymentMethod.CASH) Icons.Default.Money else Icons.Default.QrCode,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("income_medium_${method.name.lowercase(Locale.getDefault())}")
+                                )
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -355,7 +394,8 @@ fun BudgetManipulationSheet(
                                         newFundNote.ifBlank { newFundSource },
                                         newFundAmountText,
                                         newFundSource,
-                                        newFundNote.ifBlank { null }
+                                        newFundNote.ifBlank { null },
+                                        selectedMedium
                                     )
                                     newFundAmountText = ""
                                     newFundNote = ""
@@ -366,7 +406,7 @@ fun BudgetManipulationSheet(
                         ) {
                             Icon(imageVector = Icons.Default.Add, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add to My Funds", fontWeight = FontWeight.Bold)
+                            Text("Add to My Funds (${selectedMedium.displayName})", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -417,6 +457,18 @@ fun BudgetManipulationSheet(
                                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                        ) {
+                                            Text(
+                                                text = fund.paymentMethod,
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
                                         if (!fund.notes.isNullOrBlank() && fund.notes != fund.source) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(

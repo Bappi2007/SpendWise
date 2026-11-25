@@ -42,8 +42,8 @@ interface ExpenseSplitDao {
     @Update
     suspend fun updateSplit(split: ExpenseSplitEntity)
 
-    @Query("UPDATE expense_splits SET isPaid = :isPaid, settledTimestamp = :settledTimestamp WHERE id = :splitId")
-    suspend fun setPaidStatus(splitId: String, isPaid: Boolean, settledTimestamp: Long?)
+    @Query("UPDATE expense_splits SET isPaid = :isPaid, settledTimestamp = :settledTimestamp, repaymentMethod = :repaymentMethod WHERE id = :splitId")
+    suspend fun setPaidStatus(splitId: String, isPaid: Boolean, settledTimestamp: Long?, repaymentMethod: String? = null)
 
     @Query("DELETE FROM expense_splits WHERE expenseId = :expenseId")
     suspend fun deleteSplitsForExpense(expenseId: String)

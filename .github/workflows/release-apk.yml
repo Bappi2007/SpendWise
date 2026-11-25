@@ -43,9 +43,24 @@ jobs:
           KEY_PASS: ${{ secrets.KEY_PASSWORD || 'android' }}
         run: |
           mkdir -p app
+          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
+            base64 --decode debug.keystore.base64 > debug.keystore
+          fi
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "Decoding provided signing keystore from GitHub Secrets..."
             echo "$KEYSTORE_BASE64" | base64 --decode > app/release-key.jks
+          elif [ -f debug.keystore ]; then
+            echo "Deriving deterministic release keystore from project debug.keystore so in-place Android APK updates work seamlessly across versions..."
+            keytool -importkeystore \
+              -srckeystore debug.keystore \
+              -destkeystore app/release-key.jks \
+              -srcalias androiddebugkey \
+              -destalias upload \
+              -srcstorepass android \
+              -deststorepass "$STORE_PASS" \
+              -srckeypass android \
+              -destkeypass "$KEY_PASS" \
+              -noprompt
           else
             echo "::warning::SIGNING_KEYSTORE_BASE64 secret not found. Generating self-signed keystore for CI build validation..."
             keytool -genkeypair -v \

@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release version tag (e.g., v1.0.0)'
+        description: 'Release version tag (e.g., v1.1.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.1.0'
         type: string
 
 concurrency:
@@ -93,6 +93,19 @@ jobs:
             echo "Decoding production release keystore from GitHub Secrets..."
             echo "$KEYSTORE_BASE64" | base64 --decode > app/release-key.jks
             echo "signed_mode=production" >> "$GITHUB_OUTPUT"
+          elif [ -f debug.keystore ]; then
+            echo "Deriving deterministic release keystore from project debug.keystore so in-place Android APK updates work seamlessly across versions..."
+            keytool -importkeystore \
+              -srckeystore debug.keystore \
+              -destkeystore app/release-key.jks \
+              -srcalias androiddebugkey \
+              -destalias upload \
+              -srcstorepass android \
+              -deststorepass "$STORE_PASS" \
+              -srckeypass android \
+              -destkeypass "$KEY_PASS" \
+              -noprompt
+            echo "signed_mode=deterministic_project_key" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::SIGNING_KEYSTORE_BASE64 secret is not configured. Generating a temporary self-signed release keystore so the release APK can be installed on Android devices."
             keytool -genkeypair -v \
@@ -164,9 +177,11 @@ jobs:
           DEBUG_ASSET="${{ steps.assets.outputs.debug_asset }}"
 
           if [ "$SIGNED_MODE" = "production" ]; then
-            SIGNING_NOTICE="✅ **Signed Production Release**: Signed using the repository's configured production keystore (`SIGNING_KEYSTORE_BASE64`)."
+            SIGNING_NOTICE="✅ **Signed Production Release**: Signed using the repository's configured production keystore (`SIGNING_KEYSTORE_BASE64`). Supports seamless in-place **Update** over previous production releases."
+          elif [ "$SIGNED_MODE" = "deterministic_project_key" ]; then
+            SIGNING_NOTICE="✅ **Consistent Project Key Signature (In-Place Update Ready)**: Signed with the repository's deterministic project certificate (`debug.keystore.base64`). Installing either the Release or Debug APK over an existing v1.0 installation signed with the project certificate will show Android's **Update** prompt and preserve all existing Room database data."
           else
-            SIGNING_NOTICE="⚠️ **Signing Notice (Temporary CI Certificate)**: This release APK was signed with a temporary self-signed certificate generated during the GitHub Actions run because `SIGNING_KEYSTORE_BASE64` was not configured in repository secrets. It is ready for direct installation and testing on Android devices, but upgrading across future builds without uninstalling requires configuring a persistent `SIGNING_KEYSTORE_BASE64` secret."
+            SIGNING_NOTICE="⚠️ **Signing Notice (Temporary CI Certificate)**: This release APK was signed with a temporary self-signed certificate generated during the GitHub Actions run."
           fi
 
           cat <<EOF > release-notes.md

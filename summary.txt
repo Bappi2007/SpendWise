@@ -255,11 +255,48 @@ CHANGE 11: DEDICATED FRIEND MONEY LENDING & BORROWING WITH AUTO-FUND RESTORATION
     `when money is lent to friend and repaid, available funds decreases then automatically restores`.
 
 ================================================================================
+CHANGE 12: SPENDWISE v1.1 — CASH/UPI INCOME MEDIUM, SEPARATE CASH & UPI BALANCES,
+           NON-INFLATING REPAYMENT ACCOUNTING, HSV COLOR WHEEL & SEAMLESS APK UPDATE
+================================================================================
+- Context & Motivation:
+  The user requested:
+  1. Selecting the medium of income (Cash or UPI) when adding money.
+  2. A dedicated section in Analysis showing how much money remains in Cash and UPI separately.
+  3. Fixing split and lent money repayments so marking money as received does NOT add to
+     Total Income in Analysis (Total Income must only reflect genuine income), while
+     reducing net spending and restoring the money to the chosen Cash or UPI balance.
+  4. Adding an interactive Color Wheel + more preset colors and 30+ icons for categories.
+  5. Bumping the version number to v1.1 (`versionCode = 2`) with non-destructive Room migration
+     and consistent APK signing so installing the new APK from GitHub Actions shows Android's
+     "Update" prompt over the existing v1.0 app without losing any old data.
+- Key Additions:
+  * Database Schema v4 & Non-Destructive `MIGRATION_3_4` (`SpendWiseDatabase.kt`):
+    - Added `paymentMethod TEXT NOT NULL DEFAULT 'UPI'` to `funds` (existing funds default to UPI).
+    - Added `repaymentMethod TEXT DEFAULT NULL` to `expense_splits`.
+    - Removed legacy synthetic `repay_split_%` rows from `funds` so repayments never inflate Total Income.
+  * Cash & UPI Medium Selection When Adding Money (`BudgetManipulationSheet.kt`, `AddExpenseBottomSheet.kt`):
+    - Added `UPI` and `Cash` medium selector chips in the "+ Add Money" form and in the "I Borrowed" flow.
+    - Displays the `UPI` / `CASH` medium badge on every fund item in the dashboard feed and fund history.
+  * Separate Cash & UPI Remaining Balance Card in Analysis (`AnalysisScreen.kt`, `ExpenseRepository.kt`):
+    - Added `CashAndUpiBalanceCard` displaying `Cash Remaining` (`Added` vs `Net Spent`) and
+      `UPI Remaining` (`Added` vs `Net Spent`) side by side.
+  * Fixed Split & Lent Repayment Accounting (`ExpenseRepository.kt`, `HomeScreen.kt`):
+    - Marking a split or loan as received lets the user choose `Receive via: UPI or Cash`.
+    - Settled splits reduce net spending (`netExpense = grossExpense - settledSplits`) and restore
+      the repaid amount to `cashRemaining` or `upiRemaining` while keeping `totalIncome` strictly
+      equal to genuine added funds.
+  * Interactive HSV Color Wheel & 33 Category Icons (`CategoriesScreen.kt`, `CategoryVisuals.kt`):
+    - Added `HsvColorWheelPicker` with drag/tap gesture support, brightness slider, and live `#RRGGBB` hex preview alongside 24 preset color swatches.
+    - Expanded `AVAILABLE_ICONS` from 15 to 33 Material icons.
+  * Version Bump to v1.1 & Deterministic GitHub Actions Signing (`app/build.gradle.kts`, `.github/workflows/release.yml`, `SettingsScreen.kt`):
+    - Bumped `versionCode = 2` and `versionName = "1.1"`.
+    - Updated GitHub Actions release workflows to derive a deterministic signing key from `debug.keystore.base64` when `SIGNING_KEYSTORE_BASE64` is absent so every build shares a consistent signature for in-place Android updates.
+
+================================================================================
 CURRENT STATUS & QUALITY ASSURANCE
 ================================================================================
+- Application Version: SpendWise v1.1 (versionCode = 2, versionName = "1.1")
 - Android Compilation (`compile_applet`): BUILD SUCCEEDED with 0 errors.
-- Automated Test Suite (`gradle :app:testDebugUnitTest`): 33 actionable tasks executed,
-  100% of unit and Robolectric tests passing.
+- Automated Test Suite (`gradle :app:testDebugUnitTest`): 100% of unit and Robolectric tests passing.
 - Privacy & Permissions: Zero network permissions, 100% offline Room database.
 ================================================================================
-

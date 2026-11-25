@@ -12,5 +12,6 @@ data class FundEntity(
     val amount: Double,
     val source: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val notes: String? = null
+    val notes: String? = null,
+    val paymentMethod: String = PaymentMethod.UPI.name
 )

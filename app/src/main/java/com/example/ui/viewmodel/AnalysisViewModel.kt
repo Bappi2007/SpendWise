@@ -45,15 +45,15 @@ class AnalysisViewModel(
     val monthSummary: StateFlow<MonthSummary?> = _monthSummary.asStateFlow()
 
     init {
-        // Reactively recompute summary when year, month, expenses, funds (income), or preferences update
+        // Reactively recompute summary when year, month, expenses, splits, funds (income), or preferences update
         viewModelScope.launch {
             combine(
-                _selectedYear,
-                _selectedMonth,
+                combine(_selectedYear, _selectedMonth) { y, m -> Pair(y, m) },
                 repository.allExpensesWithCategory,
+                repository.allSplits,
                 repository.allFunds,
                 userPreferences
-            ) { year, month, _, _, prefs ->
+            ) { (year, month), _, _, _, prefs ->
                 Triple(year, month, prefs.monthlyBudget)
             }.collect { (year, month, budget) ->
                 refreshSummary(year, month, budget)
@@ -116,12 +116,18 @@ class AnalysisViewModel(
         }
     }
 
-    fun addFund(title: String, amountText: String, source: String, notes: String? = null) {
+    fun addFund(
+        title: String,
+        amountText: String,
+        source: String,
+        notes: String? = null,
+        paymentMethod: com.example.data.model.PaymentMethod = com.example.data.model.PaymentMethod.UPI
+    ) {
         val amount = amountText.toDoubleOrNull() ?: return
         if (amount <= 0) return
         val displayTitle = if (title.isBlank()) source else title
         viewModelScope.launch {
-            repository.insertFund(displayTitle, amount, source, notes = notes)
+            repository.insertFund(displayTitle, amount, source, notes = notes, paymentMethod = paymentMethod.name)
         }
     }
 

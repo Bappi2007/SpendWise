@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,23 +30,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,7 +59,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -61,6 +73,13 @@ import com.example.data.seeder.SampleDataSeeder
 import com.example.ui.common.CategoryIconBadge
 import com.example.ui.common.CategoryVisuals
 import com.example.ui.viewmodel.ExpenseViewModel
+import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.min
+import kotlin.math.sin
 
 @Composable
 fun CategoriesScreen(
@@ -111,7 +130,7 @@ fun CategoriesScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Customize colors and icons. Deleting any category will safely reassign its past and future transactions to 'Other'.",
+                            text = "Customize colors with the interactive color wheel or presets, and choose from 30+ icons. Deleting any category safely reassigns its transactions to 'Other'.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -265,6 +284,7 @@ fun CategoryEditDialog(
     var name by remember { mutableStateOf(category?.name ?: "") }
     var selectedIcon by remember { mutableStateOf(category?.iconKey ?: "shopping") }
     var selectedColor by remember { mutableLongStateOf(category?.colorHex ?: CategoryVisuals.PRESET_COLORS.first()) }
+    var useColorWheel by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf<String?>(null) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -308,11 +328,18 @@ fun CategoryEditDialog(
                         iconSize = 30.dp
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = name.ifBlank { "Preview" },
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column {
+                        Text(
+                            text = name.ifBlank { "Preview" },
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = String.format(Locale.US, "#%06X", (selectedColor and 0xFFFFFFL)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -335,7 +362,7 @@ fun CategoryEditDialog(
 
                 // Icon Grid
                 Text(
-                    text = "Select Icon",
+                    text = "Select Icon (${CategoryVisuals.AVAILABLE_ICONS.size} options)",
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -353,7 +380,7 @@ fun CategoryEditDialog(
                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(40.dp)
                                 .clickable { selectedIcon = key }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -370,40 +397,79 @@ fun CategoryEditDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Color Palette
-                Text(
-                    text = "Select Color",
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                // Color Selection Mode Header + Switcher
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Select Color",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(
+                            selected = !useColorWheel,
+                            onClick = { useColorWheel = false },
+                            label = { Text("Swatches", style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(14.dp))
+                            }
+                        )
+                        FilterChip(
+                            selected = useColorWheel,
+                            onClick = { useColorWheel = true },
+                            label = { Text("Color Wheel", style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(14.dp))
+                            },
+                            modifier = Modifier.testTag("toggle_color_wheel_chip")
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    CategoryVisuals.PRESET_COLORS.forEach { colorHex ->
-                        val isSelected = colorHex == selectedColor
-                        val color = Color(colorHex)
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .clickable { selectedColor = colorHex },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                if (!useColorWheel) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        CategoryVisuals.PRESET_COLORS.forEach { colorHex ->
+                            val isSelected = colorHex == selectedColor
+                            val color = Color(colorHex)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        width = if (isSelected) 2.dp else 0.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                        shape = CircleShape
+                                    )
+                                    .clickable { selectedColor = colorHex },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = if (colorHex == 0xFFFFD140L) Color(0xFF121660) else Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                } else {
+                    HsvColorWheelPicker(
+                        initialColorHex = selectedColor,
+                        onColorChanged = { newHex ->
+                            selectedColor = newHex
+                        }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -427,3 +493,169 @@ fun CategoryEditDialog(
         }
     }
 }
+
+@Composable
+fun HsvColorWheelPicker(
+    initialColorHex: Long,
+    onColorChanged: (Long) -> Unit
+) {
+    val initialHsv = remember {
+        val hsv = FloatArray(3)
+        val r = ((initialColorHex shr 16) and 0xFF).toInt()
+        val g = ((initialColorHex shr 8) and 0xFF).toInt()
+        val b = (initialColorHex and 0xFF).toInt()
+        android.graphics.Color.RGBToHSV(r, g, b, hsv)
+        hsv
+    }
+
+    var hue by remember { mutableFloatStateOf(initialHsv[0]) }
+    var saturation by remember { mutableFloatStateOf(initialHsv[1].coerceIn(0.15f, 1f)) }
+    var value by remember { mutableFloatStateOf(initialHsv[2].coerceIn(0.25f, 1f)) }
+
+    fun emitCurrentHsv() {
+        val argbInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value))
+        val unsignedLong = argbInt.toLong() and 0xFFFFFFFFL
+        onColorChanged(unsignedLong)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("hsv_color_wheel_picker"),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(185.dp)
+                .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            val hueColors = remember {
+                listOf(
+                    Color.Red,
+                    Color.Yellow,
+                    Color.Green,
+                    Color.Cyan,
+                    Color.Blue,
+                    Color.Magenta,
+                    Color.Red
+                )
+            }
+
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            val radius = min(cx, cy)
+                            val dx = offset.x - cx
+                            val dy = offset.y - cy
+                            val dist = hypot(dx, dy)
+                            val angleDeg = ((atan2(dy, dx) * 180f / PI.toFloat()) + 360f) % 360f
+                            hue = angleDeg
+                            saturation = (dist / radius).coerceIn(0f, 1f)
+                            emitCurrentHsv()
+                        }
+                    }
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, _ ->
+                            change.consume()
+                            val offset = change.position
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            val radius = min(cx, cy)
+                            val dx = offset.x - cx
+                            val dy = offset.y - cy
+                            val dist = hypot(dx, dy)
+                            val angleDeg = ((atan2(dy, dx) * 180f / PI.toFloat()) + 360f) % 360f
+                            hue = angleDeg
+                            saturation = (dist / radius).coerceIn(0f, 1f)
+                            emitCurrentHsv()
+                        }
+                    }
+            ) {
+                val radius = size.minDimension / 2f
+                val center = Offset(size.width / 2f, size.height / 2f)
+
+                // Sweep gradient for Hue around the wheel
+                drawCircle(
+                    brush = Brush.sweepGradient(hueColors, center = center),
+                    radius = radius,
+                    center = center
+                )
+
+                // Radial white gradient in center for Saturation
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.White, Color.Transparent),
+                        center = center,
+                        radius = radius
+                    ),
+                    radius = radius,
+                    center = center
+                )
+
+                // Outer border ring
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.15f),
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+
+                // Thumb indicator position
+                val angleRad = (hue * PI / 180.0).toFloat()
+                val thumbDist = saturation * radius
+                val thumbCenter = Offset(
+                    x = center.x + cos(angleRad) * thumbDist,
+                    y = center.y + sin(angleRad) * thumbDist
+                )
+
+                val selectedComposeColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
+                drawCircle(
+                    color = Color.White,
+                    radius = 11.dp.toPx(),
+                    center = thumbCenter
+                )
+                drawCircle(
+                    color = selectedComposeColor,
+                    radius = 8.dp.toPx(),
+                    center = thumbCenter
+                )
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.35f),
+                    radius = 11.dp.toPx(),
+                    center = thumbCenter,
+                    style = Stroke(width = 1.5.dp.toPx())
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Brightness / Value Slider
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Brightness",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(68.dp)
+            )
+            Slider(
+                value = value,
+                onValueChange = { newVal ->
+                    value = newVal
+                    emitCurrentHsv()
+                },
+                valueRange = 0.25f..1f,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+

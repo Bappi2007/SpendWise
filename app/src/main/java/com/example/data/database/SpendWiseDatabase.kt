@@ -25,7 +25,7 @@ import com.example.data.model.FundEntity
         FriendEntity::class,
         FundEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class SpendWiseDatabase : RoomDatabase() {
@@ -88,6 +88,14 @@ abstract class SpendWiseDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `funds` ADD COLUMN `paymentMethod` TEXT NOT NULL DEFAULT 'UPI'")
+                db.execSQL("ALTER TABLE `expense_splits` ADD COLUMN `repaymentMethod` TEXT DEFAULT NULL")
+                db.execSQL("DELETE FROM `funds` WHERE `id` LIKE 'repay_split_%'")
+            }
+        }
+
         fun getDatabase(context: Context): SpendWiseDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -95,7 +103,7 @@ abstract class SpendWiseDatabase : RoomDatabase() {
                     SpendWiseDatabase::class.java,
                     "spendwise_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration(false)
                     .build()
                 INSTANCE = instance

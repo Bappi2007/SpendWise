@@ -99,27 +99,28 @@ class ExpenseRepository(
         }
     }
 
-    suspend fun setSplitPaidStatus(splitId: String, isPaid: Boolean): ExpenseSplitEntity? {
+    suspend fun setSplitPaidStatus(
+        splitId: String,
+        isPaid: Boolean,
+        repaymentMethod: PaymentMethod
+    ): ExpenseSplitEntity? = setSplitPaidStatus(splitId, isPaid, repaymentMethod.name)
+
+    suspend fun setSplitPaidStatus(
+        splitId: String,
+        isPaid: Boolean,
+        repaymentMethod: String? = null
+    ): ExpenseSplitEntity? {
         val settledTime = if (isPaid) System.currentTimeMillis() else null
-        expenseSplitDao?.setPaidStatus(splitId, isPaid, settledTime)
-        val split = expenseSplitDao?.getSplitById(splitId)
-        if (split != null && fundDao != null) {
-            val repaymentFundId = "repay_split_${split.id}"
-            if (isPaid) {
-                val fund = FundEntity(
-                    id = repaymentFundId,
-                    title = "Repayment from ${split.personName}",
-                    amount = split.allocatedAmount,
-                    source = "Friend Repayment",
-                    timestamp = System.currentTimeMillis(),
-                    notes = "Auto-added from settled friend debt"
-                )
-                fundDao.insertFund(fund)
-            } else {
-                fundDao.deleteFundById(repaymentFundId)
-            }
+        val existingSplit = expenseSplitDao?.getSplitById(splitId)
+        val resolvedMethod = if (isPaid) {
+            repaymentMethod ?: existingSplit?.repaymentMethod ?: PaymentMethod.UPI.name
+        } else {
+            null
         }
-        return split
+        expenseSplitDao?.setPaidStatus(splitId, isPaid, settledTime, resolvedMethod)
+        // Ensure no legacy synthetic repayment fund exists in the funds table so Total Income is never inflated
+        fundDao?.deleteFundById("repay_split_$splitId")
+        return expenseSplitDao?.getSplitById(splitId)
     }
 
     suspend fun lendMoneyToFriend(
@@ -167,7 +168,8 @@ class ExpenseRepository(
             allocatedAmount = amount,
             percentage = 100.0,
             isPaid = false,
-            settledTimestamp = null
+            settledTimestamp = null,
+            repaymentMethod = null
         )
 
         saveExpenseWithSplits(expense, listOf(split))
@@ -178,7 +180,8 @@ class ExpenseRepository(
         friendName: String,
         amount: Double,
         notes: String?,
-        timestamp: Long = System.currentTimeMillis()
+        timestamp: Long = System.currentTimeMillis(),
+        paymentMethod: PaymentMethod = PaymentMethod.UPI
     ): FundEntity {
         val trimmedName = friendName.trim()
         if (friendDao != null) {
@@ -192,7 +195,8 @@ class ExpenseRepository(
             amount = amount,
             source = "Friend Loan",
             timestamp = timestamp,
-            notes = notes?.trim()?.ifEmpty { null }
+            notes = notes?.trim()?.ifEmpty { null },
+            paymentMethod = paymentMethod.name
         )
         fundDao?.insertFund(fund)
         return fund
@@ -224,6 +228,11 @@ class ExpenseRepository(
         categoryDao.deleteCategory(category)
     }
 
+    private fun netExpenseAmount(item: ExpenseWithCategory): Double {
+        val settledSplits = item.splits.filter { it.isPaid }.sumOf { it.allocatedAmount }
+        return (item.expense.amount - settledSplits).coerceAtLeast(0.0)
+    }
+
     suspend fun calculateMonthSummary(
         year: Int,
         month: Int,
@@ -242,8 +251,11 @@ class ExpenseRepository(
         val (startPrev, endPrev) = getMonthBounds(prevYear, prevMonth)
         val prevExpenses = expenseDao.getExpensesByRangeSync(startPrev, endPrev)
 
-        val totalSpent = currentExpenses.sumOf { it.expense.amount }
-        val previousMonthTotal = prevExpenses.sumOf { it.expense.amount }
+        val totalSpent = currentExpenses.sumOf { netExpenseAmount(it) }
+        val previousMonthTotal = prevExpenses.sumOf { netExpenseAmount(it) }
+        val settledRepaymentsTotal = currentExpenses.sumOf { item ->
+            item.splits.filter { it.isPaid }.sumOf { it.allocatedAmount }
+        }
 
         val percentageChange = if (previousMonthTotal > 0) {
             ((totalSpent - previousMonthTotal) / previousMonthTotal) * 100.0
@@ -267,7 +279,7 @@ class ExpenseRepository(
         val dailyList = mutableListOf<DailySpending>()
         for (day in 1..daysInMonth) {
             val dayExpenses = expensesByDay[day] ?: emptyList()
-            val dayTotal = dayExpenses.sumOf { it.expense.amount }
+            val dayTotal = dayExpenses.sumOf { netExpenseAmount(it) }
 
             val dayCal = Calendar.getInstance().apply {
                 set(Calendar.YEAR, year)
@@ -298,23 +310,27 @@ class ExpenseRepository(
         val prefs = preferencesRepository.getPreferencesSync()
         val categoryBudgets = prefs.categoryBudgets
 
-        val categoryBreakdowns = expensesByCategory.map { (catId, exps) ->
-            val catTotal = exps.sumOf { it.expense.amount }
-            val catEntity = allCategories[catId]
-            val catPercentage = if (totalSpent > 0) ((catTotal / totalSpent) * 100.0).toFloat() else 0f
-            val catLimit = categoryBudgets[catId]
-            val catProgress = if (catLimit != null && catLimit > 0) (catTotal / catLimit).toFloat() else null
-            CategorySpending(
-                categoryId = catId,
-                categoryName = catEntity?.name ?: "Other",
-                colorHex = catEntity?.colorHex ?: 0xFF64748B,
-                iconKey = catEntity?.iconKey ?: "other",
-                totalAmount = catTotal,
-                percentage = catPercentage,
-                transactionCount = exps.size,
-                budgetLimit = catLimit,
-                budgetProgress = catProgress
-            )
+        val categoryBreakdowns = expensesByCategory.mapNotNull { (catId, exps) ->
+            val catTotal = exps.sumOf { netExpenseAmount(it) }
+            if (catTotal <= 0.0 && exps.all { it.splits.isNotEmpty() && it.pendingSplitsCount == 0 }) {
+                null
+            } else {
+                val catEntity = allCategories[catId]
+                val catPercentage = if (totalSpent > 0) ((catTotal / totalSpent) * 100.0).toFloat() else 0f
+                val catLimit = categoryBudgets[catId]
+                val catProgress = if (catLimit != null && catLimit > 0) (catTotal / catLimit).toFloat() else null
+                CategorySpending(
+                    categoryId = catId,
+                    categoryName = catEntity?.name ?: "Other",
+                    colorHex = catEntity?.colorHex ?: 0xFF64748B,
+                    iconKey = catEntity?.iconKey ?: "other",
+                    totalAmount = catTotal,
+                    percentage = catPercentage,
+                    transactionCount = exps.size,
+                    budgetLimit = catLimit,
+                    budgetProgress = catProgress
+                )
+            }
         }.sortedByDescending { it.totalAmount }
 
         val isLimitEnabled = prefs.isMonthlyLimitEnabled
@@ -322,10 +338,47 @@ class ExpenseRepository(
         val monthBudgets = prefs.monthBudgets
         val specificMonthBudget = monthBudgets[monthBudgetKey]
 
-        // Fetch income/funds for the month (fallback to all funds if none in this month)
-        val monthIncome = fundDao?.getFundsAmountInRange(startCurrent, endCurrent) ?: 0.0
-        val allIncome = fundDao?.getTotalFundsAmountSync() ?: 0.0
-        val totalIncome = if (monthIncome > 0) monthIncome else allIncome
+        // Fetch pure income funds for the month (fallback to all funds if none in this month). Repayments are never included.
+        val monthFundsList = fundDao?.getFundsInRangeSync(startCurrent, endCurrent) ?: emptyList()
+        val allFundsList = fundDao?.getAllFundsSync() ?: emptyList()
+        val activeFunds = if (monthFundsList.isNotEmpty()) monthFundsList else allFundsList
+
+        val totalIncome = activeFunds.sumOf { it.amount }
+        val cashIncome = activeFunds
+            .filter { it.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.amount }
+        val upiIncome = activeFunds
+            .filter { !it.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.amount }
+
+        // Calculate gross cash and UPI expenses in this month
+        val grossCashSpent = currentExpenses
+            .filter { it.expense.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.expense.amount }
+        val grossUpiSpent = currentExpenses
+            .filter { !it.expense.paymentMethod.equals(PaymentMethod.CASH.name, ignoreCase = true) }
+            .sumOf { it.expense.amount }
+
+        // Calculate settled repayments received by medium (Cash vs UPI)
+        var cashRepayments = 0.0
+        var upiRepayments = 0.0
+        for (item in currentExpenses) {
+            for (split in item.splits) {
+                if (split.isPaid) {
+                    val method = split.repaymentMethod ?: item.expense.paymentMethod
+                    if (method.equals(PaymentMethod.CASH.name, ignoreCase = true)) {
+                        cashRepayments += split.allocatedAmount
+                    } else {
+                        upiRepayments += split.allocatedAmount
+                    }
+                }
+            }
+        }
+
+        val netCashSpent = (grossCashSpent - cashRepayments).coerceAtLeast(0.0)
+        val netUpiSpent = (grossUpiSpent - upiRepayments).coerceAtLeast(0.0)
+        val cashRemaining = cashIncome - grossCashSpent + cashRepayments
+        val upiRemaining = upiIncome - grossUpiSpent + upiRepayments
 
         // When monthly limit is off, calculate the monthly budget according to total income
         val effectiveBudget = if (isLimitEnabled) {
@@ -351,7 +404,7 @@ class ExpenseRepository(
             val tMonth = trendCal.get(Calendar.MONTH) + 1
             val (tStart, tEnd) = getMonthBounds(tYear, tMonth)
             val tExpenses = expenseDao.getExpensesByRangeSync(tStart, tEnd)
-            val tTotal = tExpenses.sumOf { it.expense.amount }
+            val tTotal = tExpenses.sumOf { netExpenseAmount(it) }
 
             monthlyTrends.add(
                 MonthlyTrend(
@@ -401,7 +454,14 @@ class ExpenseRepository(
             isOverBudget = isOverBudget,
             isMonthSpecificBudget = isMonthSpecific,
             isMonthlyLimitEnabled = isLimitEnabled,
-            totalIncome = totalIncome
+            totalIncome = totalIncome,
+            cashIncome = cashIncome,
+            upiIncome = upiIncome,
+            cashSpent = netCashSpent,
+            upiSpent = netUpiSpent,
+            cashRemaining = cashRemaining,
+            upiRemaining = upiRemaining,
+            settledRepaymentsTotal = settledRepaymentsTotal
         )
     }
 
@@ -467,14 +527,16 @@ class ExpenseRepository(
         amount: Double,
         source: String,
         timestamp: Long = System.currentTimeMillis(),
-        notes: String? = null
+        notes: String? = null,
+        paymentMethod: String = PaymentMethod.UPI.name
     ): FundEntity {
         val fund = FundEntity(
             title = title.trim(),
             amount = amount,
             source = source.trim(),
             timestamp = timestamp,
-            notes = notes?.trim()
+            notes = notes?.trim(),
+            paymentMethod = paymentMethod
         )
         fundDao?.insertFund(fund)
         return fund

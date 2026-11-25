@@ -28,5 +28,6 @@ data class ExpenseSplitEntity(
     val allocatedAmount: Double,
     val percentage: Double = 0.0,
     val isPaid: Boolean = false,
-    val settledTimestamp: Long? = null
+    val settledTimestamp: Long? = null,
+    val repaymentMethod: String? = null
 )

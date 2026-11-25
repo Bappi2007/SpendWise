@@ -296,7 +296,7 @@ class FundsAndFriendsTest {
     }
 
     @Test
-    fun `when money is lent to friend and repaid, available funds decreases then automatically restores`() = runBlocking {
+    fun `when money is lent to friend and repaid, available funds decreases then automatically restores without inflating totalIncome`() = runBlocking {
         val repository = com.example.data.repository.ExpenseRepository(
             expenseDao = expenseDao,
             categoryDao = database.categoryDao(),
@@ -305,27 +305,35 @@ class FundsAndFriendsTest {
             friendDao = friendDao,
             fundDao = fundDao
         )
+        repository.setMonthlyLimitEnabled(false)
 
-        // 1. Initial fund of 10,000
+        val now = System.currentTimeMillis()
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = now }
+        val year = cal.get(java.util.Calendar.YEAR)
+        val month = cal.get(java.util.Calendar.MONTH) + 1
+
+        // 1. Initial fund of 10,000 in UPI
         fundDao.insertFund(
             FundEntity(
                 id = "fund_init",
                 title = "Salary",
                 amount = 10000.0,
                 source = "Job",
-                timestamp = System.currentTimeMillis()
+                timestamp = now,
+                paymentMethod = PaymentMethod.UPI.name
             )
         )
 
         val totalFundsBefore = fundDao.getTotalFundsAmountSync()
         assertEquals(10000.0, totalFundsBefore, 0.001)
 
-        // 2. Lend 2,500 to Rahul
+        // 2. Lend 2,500 to Rahul via UPI
         val (expense, split) = repository.lendMoneyToFriend(
             friendName = "Rahul",
             amount = 2500.0,
             paymentMethod = PaymentMethod.UPI,
-            notes = "Emergency money"
+            notes = "Emergency money",
+            timestamp = now
         )
 
         assertEquals("Lent to Rahul", expense.title)
@@ -338,29 +346,125 @@ class FundsAndFriendsTest {
         val savedFriend = friendDao.getFriendByName("Rahul")
         org.junit.Assert.assertNotNull(savedFriend)
 
-        // 3. Mark debt as settled / repaid
-        val updatedSplit = repository.setSplitPaidStatus(split.id, true)
+        // Before repayment: spent is 2,500, UPI remaining is 7,500, totalIncome is 10,000
+        val summaryBeforeRepay = repository.calculateMonthSummary(year, month, 10000.0)
+        assertEquals(10000.0, summaryBeforeRepay.totalIncome, 0.001)
+        assertEquals(2500.0, summaryBeforeRepay.totalSpent, 0.001)
+        assertEquals(7500.0, summaryBeforeRepay.upiRemaining, 0.001)
+
+        // 3. Mark debt as settled / repaid via CASH
+        val updatedSplit = repository.setSplitPaidStatus(split.id, true, PaymentMethod.CASH)
         org.junit.Assert.assertNotNull(updatedSplit)
         assertTrue(updatedSplit!!.isPaid)
+        assertEquals(PaymentMethod.CASH.name, updatedSplit.repaymentMethod)
 
-        // Repayment fund should automatically be added
+        // Repayment must NOT be added to funds table or inflate totalIncome
         val allFundsAfterRepaid = fundDao.getAllFundsSync()
         val repaymentFund = allFundsAfterRepaid.find { it.id == "repay_split_${split.id}" }
-        org.junit.Assert.assertNotNull(repaymentFund)
-        assertEquals("Repayment from Rahul", repaymentFund!!.title)
-        assertEquals(2500.0, repaymentFund.amount, 0.001)
+        org.junit.Assert.assertNull(repaymentFund)
+        assertEquals(10000.0, fundDao.getTotalFundsAmountSync(), 0.001)
 
-        val totalFundsAfterRepaid = fundDao.getTotalFundsAmountSync()
-        assertEquals(12500.0, totalFundsAfterRepaid, 0.001)
+        // After repayment in Cash:
+        // - totalIncome remains 10,000 (not 12,500!)
+        // - net totalSpent drops from 2,500 to 0.0
+        // - cashRemaining increases by 2,500 (since repaid in Cash)
+        // - upiRemaining is 7,500 (10,000 UPI income - 2,500 UPI lent)
+        val summaryAfterRepay = repository.calculateMonthSummary(year, month, 10000.0)
+        assertEquals(10000.0, summaryAfterRepay.totalIncome, 0.001)
+        assertEquals(0.0, summaryAfterRepay.totalSpent, 0.001)
+        assertEquals(2500.0, summaryAfterRepay.settledRepaymentsTotal, 0.001)
+        assertEquals(2500.0, summaryAfterRepay.cashRemaining, 0.001)
+        assertEquals(7500.0, summaryAfterRepay.upiRemaining, 0.001)
 
-        // 4. If unmarked as paid, repayment fund should be cleanly removed
+        // 4. If unmarked as paid, net spent returns to 2,500 and cashRemaining returns to 0
         val unmarkedSplit = repository.setSplitPaidStatus(split.id, false)
         org.junit.Assert.assertNotNull(unmarkedSplit)
         org.junit.Assert.assertFalse(unmarkedSplit!!.isPaid)
 
-        val allFundsAfterUnmarked = fundDao.getAllFundsSync()
-        val removedRepayment = allFundsAfterUnmarked.find { it.id == "repay_split_${split.id}" }
-        org.junit.Assert.assertNull(removedRepayment)
-        assertEquals(10000.0, fundDao.getTotalFundsAmountSync(), 0.001)
+        val summaryAfterUnmark = repository.calculateMonthSummary(year, month, 10000.0)
+        assertEquals(10000.0, summaryAfterUnmark.totalIncome, 0.001)
+        assertEquals(2500.0, summaryAfterUnmark.totalSpent, 0.001)
+        assertEquals(0.0, summaryAfterUnmark.cashRemaining, 0.001)
+        assertEquals(7500.0, summaryAfterUnmark.upiRemaining, 0.001)
+    }
+
+    @Test
+    fun `calculateMonthSummary tracks separate Cash and UPI income, spending, and remaining balances`() = runBlocking {
+        val category = CategoryEntity(
+            id = "cat_food",
+            name = "Food",
+            iconKey = "food",
+            colorHex = 0xFFF97316L,
+            isDefault = true
+        )
+        database.categoryDao().insertCategory(category)
+
+        val now = System.currentTimeMillis()
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = now }
+        val year = cal.get(java.util.Calendar.YEAR)
+        val month = cal.get(java.util.Calendar.MONTH) + 1
+
+        // Add 6,000 via UPI and 4,000 via Cash (Total Income = 10,000)
+        fundDao.insertFund(
+            FundEntity(
+                id = "f_upi",
+                title = "Parents UPI",
+                amount = 6000.0,
+                source = "From Parents",
+                timestamp = now,
+                paymentMethod = PaymentMethod.UPI.name
+            )
+        )
+        fundDao.insertFund(
+            FundEntity(
+                id = "f_cash",
+                title = "Pocket Cash",
+                amount = 4000.0,
+                source = "Pocket Money",
+                timestamp = now,
+                paymentMethod = PaymentMethod.CASH.name
+            )
+        )
+
+        // Spend 1,500 via UPI and 1,000 via Cash
+        expenseDao.insertExpense(
+            ExpenseEntity(
+                id = "e_upi",
+                title = "Online Order",
+                amount = 1500.0,
+                categoryId = category.id,
+                timestamp = now,
+                paymentMethod = PaymentMethod.UPI.name
+            )
+        )
+        expenseDao.insertExpense(
+            ExpenseEntity(
+                id = "e_cash",
+                title = "Market Groceries",
+                amount = 1000.0,
+                categoryId = category.id,
+                timestamp = now,
+                paymentMethod = PaymentMethod.CASH.name
+            )
+        )
+
+        val repository = com.example.data.repository.ExpenseRepository(
+            expenseDao = expenseDao,
+            categoryDao = database.categoryDao(),
+            preferencesRepository = com.example.data.preferences.UserPreferencesRepository(context),
+            expenseSplitDao = database.expenseSplitDao(),
+            friendDao = friendDao,
+            fundDao = fundDao
+        )
+        repository.setMonthlyLimitEnabled(false)
+
+        val summary = repository.calculateMonthSummary(year, month, 10000.0)
+        assertEquals(10000.0, summary.totalIncome, 0.001)
+        assertEquals(6000.0, summary.upiIncome, 0.001)
+        assertEquals(4000.0, summary.cashIncome, 0.001)
+        assertEquals(1500.0, summary.upiSpent, 0.001)
+        assertEquals(1000.0, summary.cashSpent, 0.001)
+        assertEquals(4500.0, summary.upiRemaining, 0.001)
+        assertEquals(3000.0, summary.cashRemaining, 0.001)
     }
 }

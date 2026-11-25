@@ -140,8 +140,9 @@ fun AddExpenseBottomSheet(
         friendName: String,
         amountText: String,
         notes: String?,
-        timestamp: Long
-    ) -> Boolean = { _, _, _, _ -> false }
+        timestamp: Long,
+        paymentMethod: PaymentMethod
+    ) -> Boolean = { _, _, _, _, _ -> false }
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -326,7 +327,8 @@ fun AddExpenseBottomSheet(
                         val success = if (loanDirection == FriendLoanDirection.LENT) {
                             onLendMoney(friendNameInput, friendAmountInput, friendPaymentMethod, friendNotes, friendTimestamp)
                         } else {
-                            onBorrowMoney(friendNameInput, friendAmountInput, friendNotes, friendTimestamp)
+                            val borrowMedium = if (friendPaymentMethod == PaymentMethod.CASH) PaymentMethod.CASH else PaymentMethod.UPI
+                            onBorrowMoney(friendNameInput, friendAmountInput, friendNotes, friendTimestamp, borrowMedium)
                         }
                         if (success) {
                             onDismiss()
@@ -1362,41 +1364,44 @@ private fun FriendLoanContent(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Payment Method (for Lent)
-        if (loanDirection == FriendLoanDirection.LENT) {
-            Text(
-                text = "Payment Method",
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                PaymentMethod.values().forEach { method ->
-                    val isSelected = paymentMethod == method
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { onPaymentMethodChange(method) },
-                        label = { Text(method.name) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = when (method) {
-                                    PaymentMethod.CASH -> Icons.Default.Money
-                                    PaymentMethod.UPI -> Icons.Default.QrCode
-                                    PaymentMethod.CARD -> Icons.Default.CreditCard
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(14.dp))
+        // Payment Method / Medium Selector (for both Lent and Borrowed)
+        Text(
+            text = if (loanDirection == FriendLoanDirection.LENT) "Payment Method" else "Received Medium (Cash or UPI)",
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        val availableMethods = if (loanDirection == FriendLoanDirection.LENT) {
+            PaymentMethod.values().toList()
+        } else {
+            listOf(PaymentMethod.UPI, PaymentMethod.CASH)
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            availableMethods.forEach { method ->
+                val isSelected = paymentMethod == method || (loanDirection == FriendLoanDirection.BORROWED && paymentMethod == PaymentMethod.CARD && method == PaymentMethod.UPI)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onPaymentMethodChange(method) },
+                    label = { Text(method.displayName) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = when (method) {
+                                PaymentMethod.CASH -> Icons.Default.Money
+                                PaymentMethod.UPI -> Icons.Default.QrCode
+                                PaymentMethod.CARD -> Icons.Default.CreditCard
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Date & Time
         Text(

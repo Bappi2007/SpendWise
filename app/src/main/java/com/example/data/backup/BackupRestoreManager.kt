@@ -110,6 +110,9 @@ class BackupRestoreManager(
                     if (sp.settledTimestamp != null) {
                         sObj.put("settledTimestamp", sp.settledTimestamp)
                     }
+                    if (sp.repaymentMethod != null) {
+                        sObj.put("repaymentMethod", sp.repaymentMethod)
+                    }
                     splitArray.put(sObj)
                 }
                 eObj.put("splits", splitArray)
@@ -251,7 +254,8 @@ class BackupRestoreManager(
                                 allocatedAmount = s.getDouble("allocatedAmount"),
                                 percentage = s.optDouble("percentage", 0.0),
                                 isPaid = s.optBoolean("isPaid", false),
-                                settledTimestamp = if (s.has("settledTimestamp") && !s.isNull("settledTimestamp")) s.getLong("settledTimestamp") else null
+                                settledTimestamp = if (s.has("settledTimestamp") && !s.isNull("settledTimestamp")) s.getLong("settledTimestamp") else null,
+                                repaymentMethod = if (s.has("repaymentMethod") && !s.isNull("repaymentMethod")) s.getString("repaymentMethod") else null
                             )
                         )
                     }

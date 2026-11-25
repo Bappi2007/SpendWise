@@ -1,13 +1,13 @@
 # SpendWise 💰
 
-[![Download Latest APK](https://img.shields.io/badge/Download_Latest_APK-SpendWise_v1.0.0-0171DF?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Bappi2007/SpendWise/releases/latest)
+[![Download Latest APK](https://img.shields.io/badge/Download_Latest_APK-SpendWise_v1.1.0-0171DF?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Bappi2007/SpendWise/releases/latest)
 [![GitHub Release](https://img.shields.io/github/v/release/Bappi2007/SpendWise?style=for-the-badge&logo=github&color=3CAE8B)](https://github.com/Bappi2007/SpendWise/releases/latest)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-FFD140?style=for-the-badge&logo=android&logoColor=121660)](https://github.com/Bappi2007/SpendWise/releases)
 [![Offline First](https://img.shields.io/badge/Privacy-100%25_Offline-121660?style=for-the-badge)](https://github.com/Bappi2007/SpendWise)
 
 > A modern, privacy-first native Android personal finance & expense manager built with **Kotlin**, **Jetpack Compose**, **Material 3**, and **Room Database**.
 
-SpendWise operates 100% offline with **zero network permissions**, keeping all financial transactions, fund inflows, and friend debt settlements securely on your device. It provides interactive data visualizations, group expense splitting, dedicated friend loan tracking with automated repayment fund restoration, a flexible budget controller with fund tracking, calendar-based data management, local JSON backups via Android's Storage Access Framework (SAF), and spreadsheet exports (CSV & native Excel `.xlsx`).
+SpendWise operates 100% offline with **zero network permissions**, keeping all financial transactions, Cash & UPI fund inflows, and friend debt settlements securely on your device. It provides interactive data visualizations, separate **Cash & UPI remaining balance analytics**, group expense splitting, dedicated friend loan tracking with non-inflating repayment settlement, a flexible budget controller with Cash/UPI medium selection, an interactive **HSV Color Wheel** & 30+ icons for categories, calendar-based data management, local JSON backups via Android's Storage Access Framework (SAF), and spreadsheet exports (CSV & native Excel `.xlsx`).
 
 ---
 
@@ -20,9 +20,10 @@ Get the latest pre-built Android APK directly from **GitHub Releases**:
 
 | Release Info | Details |
 | :--- | :--- |
-| **Latest Version** | `v1.0.0` (`versionCode = 1`, `versionName = "1.0"`) |
+| **Latest Version** | `v1.1.0` (`versionCode = 2`, `versionName = "1.1"`) |
 | **Application ID** | `com.aistudio.spendwise.qvrpnm` |
 | **Minimum Android** | Android 8.0 Oreo (API 26) or newer (Target/Compile SDK 36) |
+| **In-Place Upgrade** | Supports seamless Android **Update** over `v1.0` with non-destructive Room migration (`MIGRATION_3_4`) preserving all existing data |
 | **Available Assets** | `SpendWise-<tag>-release.apk` (Recommended), `SpendWise-<tag>-debug.apk`, `SHA256SUMS.txt` |
 | **All Releases** | [https://github.com/Bappi2007/SpendWise/releases](https://github.com/Bappi2007/SpendWise/releases) |
 
@@ -45,7 +46,7 @@ Get the latest pre-built Android APK directly from **GitHub Releases**:
 - **GitHub**: [@Bappi2007](https://github.com/Bappi2007)  
 - **Repository**: [Bappi2007/SpendWise](https://github.com/Bappi2007/SpendWise)  
 - **Email**: [bishalkumandal777@gmail.com](mailto:bishalkumandal777@gmail.com)  
-- **Version**: SpendWise v1.0 (Offline-first Jetpack Compose Room Database)
+- **Version**: SpendWise v1.1 (Offline-first Jetpack Compose Room Database)
 
 ---
 
@@ -71,25 +72,25 @@ Get the latest pre-built Android APK directly from **GitHub Releases**:
 - **Dedicated Friend Money Lending & Borrowing**:
   - Log money lent to friends or borrowed from friends directly in the primary Add bottom sheet via the top **"Lend / Borrow"** mode switch.
   - **Lending Flow**: Automatically categorizes as *"Money Lent"* (`cat_default_money_lent` with Handshake icon), creates an unpaid debt record in *Who Owes Me*, and deducts the amount from your available funds until the friend repays.
-  - **Automated Repayment & Fund Balance Restoration**: When a friend repays and you mark the debt as settled (via the *Who Owes Me* card, *Split Hub*, or transaction details), SpendWise automatically generates an inflow fund entry (`"Repayment from [Friend]"`) that immediately restores the money back into your available balance, accompanied by a confirmation Snackbar with **UNDO** support.
-  - **Borrowing Flow**: Log money borrowed from friends, instantly adding the received funds into your available spending balance.
+  - **Accurate Repayment Accounting (Excludes Repayments from Total Income)**: When a friend repays a split or loan and you mark it as received (choosing **UPI** or **Cash** as the received medium), SpendWise restores the amount to your selected **Cash** or **UPI** remaining balance and reduces net spending **without artificially inflating your Total Income** in Analysis.
+  - **Borrowing Flow with Medium Selection**: Log money borrowed from friends and choose whether you received it in **Cash** or **UPI**, immediately updating the corresponding balance.
 - **Group Bill Splitting**: Split any expense among friends with one tap directly inside the expense creation sheet or settlement hub.
 - **Three Division Modes**:
   - **Equal Division**: Splits the total equally among all selected participants.
   - **Percentage Split**: Custom percentage allocations per friend.
   - **Manual Entry**: Specify exact monetary amounts per participant.
 - **Saved Friends Directory**: Add or remove frequent friends (e.g. Rahul, Priya, Alex) with instant auto-suggest chips.
-- **Settlement Tracking & Checkbox System**:
-  - Quick checkbox toggles to mark when someone pays you back.
+- **Settlement Tracking & Medium Picker**:
+  - Quick checkbox toggles to mark when someone pays you back, with an inline **Receive into: UPI / Cash** selector.
   - Dedicated **Who Owes Me & Split Hub** on the home screen showing total pending receivables and individual breakdowns.
-  - Visual status chips distinguishing **Pending** from **Settled**, with dedicated **"Awaiting Repayment"** and **"Repaid"** handshake badges for friend loans.
+  - Visual status chips distinguishing **Pending** from **Settled (UPI / Cash)**, with dedicated **"Awaiting Repayment"** and **"Repaid"** handshake badges for friend loans.
 - **Visual Split Graph**: Interactive graphic chart illustrating per-person breakdown and collected vs. pending debts.
 
-### 3. 🎛️ Flexible Budget Controller & Inflow Tracking
-- **"My Funds" Flexible Tracker**:
-  - Ditch rigid arbitrary spending quotas: log the exact money you receive from parents, freelance earnings, pocket money, or gifts.
-  - Live **Available to Spend** balance calculation (`Total Funds Added - Month Spent`).
-  - History of received funds with timestamps, sources, and deletion support.
+### 3. 🎛️ Flexible Budget Controller & Cash / UPI Inflow Tracking
+- **"My Funds" Flexible Tracker with Cash / UPI Medium**:
+  - Log the exact money you receive from parents, freelance earnings, pocket money, or gifts, and select the **Medium of Income (`UPI` or `Cash`)**.
+  - Live **Available to Spend** balance calculation (`Total Funds Added - Net Month Spent`).
+  - History of received funds with timestamps, sources, medium badges (`UPI` / `CASH`), and deletion support.
 - **Optional Monthly Spending Limit**:
   - Toggle the monthly spending limit **ON** or **OFF** at will.
   - When enabled, features real-time **Safe Daily Pace Calculator** (`Remaining Budget / Days Left`) and visual pace indicators.
@@ -97,18 +98,22 @@ Get the latest pre-built Android APK directly from **GitHub Releases**:
   - Preset benchmarks (`₹15k`, `₹25k`, `₹35k`, `₹50k`, `₹75k`, `₹100k`).
 - **Category-Level Budget Limits**: Allocate spending caps per category (e.g., Food: ₹8,000, Shopping: ₹4,000) with visual progress meters.
 
-### 4. 📊 Monthly Analytics & Data Visualization
+### 4. 📊 Monthly Analytics, Separate Cash & UPI Remaining Balances & Charts
+- **Remaining Money by Medium (Cash vs. UPI Breakdown)**:
+  - Dedicated card in the **Analysis** tab showing **Cash Remaining** (`Added` vs `Net Spent`) and **UPI Remaining** (`Added` vs `Net Spent`) side by side.
+  - Automatically accounts for settled split/loan repayments into the chosen medium (`Cash` or `UPI`) while keeping **Total Income** strictly equal to genuine income/added funds.
 - **Month-over-Month Navigation**: Effortlessly step through past and upcoming months with `←` and `→` controls.
-- **Dynamic Income-Based Budget**: When the monthly limit toggle is switched **OFF**, monthly budget targets are automatically derived from total income (added funds), accurately showing healthy progress rather than flagging a false *"Budget Exceeded"* state.
-- **Key Financial Metrics**: Monthly total spend, month-over-month percentage change (`%`) badge, daily average expenditure, and peak spend day.
+- **Dynamic Income-Based Budget**: When the monthly limit toggle is switched **OFF**, monthly budget targets are automatically derived from total genuine income (added funds).
+- **Key Financial Metrics**: Monthly net spend, month-over-month percentage change (`%`) badge, daily average expenditure, and peak spend day.
 - **Category Donut Chart**: Compose Canvas donut chart with animated sweep angles, central total display, slice tap selection, and legend breakdown.
 - **Daily Spending Bar Chart**: Visualizes day-by-day expenditure across the month with weekend indicators and peak day highlight.
 - **6-Month Trend Line Chart**: Smooth cubic Bézier curve displaying month-over-month trajectory with gradient underfill.
 - **Top Categories Breakdown**: Ranked list with proportional progress indicators and transaction counts.
 
-### 5. 🏷️ Category Management
+### 5. 🏷️ Category Management with Interactive HSV Color Wheel & 33 Icons
 - **Predefined Categories**: Seeded defaults (*Food*, *Transport*, *Rent*, *Bills*, *Shopping*, *Health*, *Entertainment*, *Education*, *Money Lent*, and *Other*), each with distinct icons and colors.
-- **Custom Categories**: Create, edit, and color-code custom categories from a curated icon set and color palette.
+- **Interactive Color Wheel & 24 Preset Swatches**: Switch between 24 curated preset color swatches or an interactive **HSV Color Wheel** with drag/tap selection, brightness slider, and live `#RRGGBB` hex preview.
+- **Expanded 33-Icon Library**: Choose from 33 Material icons including Groceries, Fuel, Electricity, Water, Wi-Fi, Subscriptions, Clothing, Salon, Fitness, Gaming, Music, Books, Family, Pets, Savings, Investment, Repair, Charity, and more.
 - **Safe Reassignment**: Deleting any category automatically reassigns all past and future expenses to *"Other"*, keeping historical balances intact.
 
 ### 6. 📅 Calendar Range Data Management

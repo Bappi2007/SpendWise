@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Money
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,6 +47,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -181,8 +183,8 @@ fun HomeScreen(
                     friendsCount = allFriends.size,
                     currencySymbol = currencySymbol,
                     onViewAll = { isSettlementSummaryOpen = true },
-                    onTogglePaid = { splitId, isPaid ->
-                        viewModel.toggleSplitPaidStatus(splitId, isPaid)
+                    onTogglePaid = { splitId, isPaid, method ->
+                        viewModel.toggleSplitPaidStatus(splitId, isPaid, method)
                     },
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -330,8 +332,8 @@ fun HomeScreen(
             onLendMoney = { friendName, amountText, paymentMethod, notes, timestamp ->
                 viewModel.lendMoneyToFriend(friendName, amountText, paymentMethod, notes, timestamp)
             },
-            onBorrowMoney = { friendName, amountText, notes, timestamp ->
-                viewModel.borrowMoneyFromFriend(friendName, amountText, notes, timestamp)
+            onBorrowMoney = { friendName, amountText, notes, timestamp, paymentMethod ->
+                viewModel.borrowMoneyFromFriend(friendName, amountText, notes, timestamp, paymentMethod)
             }
         )
     }
@@ -342,8 +344,8 @@ fun HomeScreen(
             item = item,
             currencySymbol = currencySymbol,
             onDismiss = { expenseToViewSplits = null },
-            onTogglePaid = { splitId, isPaid ->
-                viewModel.toggleSplitPaidStatus(splitId, isPaid)
+            onTogglePaid = { splitId, isPaid, method ->
+                viewModel.toggleSplitPaidStatus(splitId, isPaid, method)
             },
             onEditExpense = {
                 expenseToEdit = item
@@ -360,8 +362,8 @@ fun HomeScreen(
             friends = allFriends,
             currencySymbol = currencySymbol,
             onDismiss = { isSettlementSummaryOpen = false },
-            onTogglePaid = { splitId, isPaid ->
-                viewModel.toggleSplitPaidStatus(splitId, isPaid)
+            onTogglePaid = { splitId, isPaid, method ->
+                viewModel.toggleSplitPaidStatus(splitId, isPaid, method)
             },
             onAddFriend = { name ->
                 viewModel.addFriend(name)
@@ -389,8 +391,8 @@ fun HomeScreen(
             categoryBudgets = userPrefs.categoryBudgets,
             funds = allFunds,
             isMonthlyLimitEnabled = userPrefs.isMonthlyLimitEnabled,
-            onAddFund = { title, amt, src, notes ->
-                viewModel.addFund(title, amt, src, notes)
+            onAddFund = { title, amt, src, notes, method ->
+                viewModel.addFund(title, amt, src, notes, method)
             },
             onDeleteFund = { fund ->
                 viewModel.deleteFund(fund)
@@ -662,9 +664,11 @@ fun WhoOwesMeCard(
     friendsCount: Int,
     currencySymbol: String,
     onViewAll: () -> Unit,
-    onTogglePaid: (splitId: String, isPaid: Boolean) -> Unit,
+    onTogglePaid: (splitId: String, isPaid: Boolean, repaymentMethod: PaymentMethod) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var receiveMedium by remember { mutableStateOf(PaymentMethod.UPI) }
+
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
@@ -720,7 +724,50 @@ fun WhoOwesMeCard(
             }
 
             if (settlementOverview.totalPendingAmount > 0) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Quick Receive Medium Selector (UPI / Cash)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Receive money into:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(PaymentMethod.UPI, PaymentMethod.CASH).forEach { method ->
+                            val isSelected = receiveMedium == method
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.clickable { receiveMedium = method }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (method == PaymentMethod.CASH) Icons.Default.Money else Icons.Default.QrCode,
+                                        contentDescription = null,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = method.displayName,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal),
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Quick rows for the top 2 pending people
                 settlementOverview.peopleSummaries.filter { it.pendingAmount > 0 }.take(2).forEach { person ->
@@ -761,7 +808,7 @@ fun WhoOwesMeCard(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 person.splits.firstOrNull { !it.isPaid }?.let { sp ->
                                     IconButton(
-                                        onClick = { onTogglePaid(sp.id, true) },
+                                        onClick = { onTogglePaid(sp.id, true, receiveMedium) },
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
@@ -1225,6 +1272,20 @@ fun FundRowCard(
                         )
                     }
 
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = fund.paymentMethod,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
                     Text(
                         text = " • ",
                         style = MaterialTheme.typography.labelSmall,
@@ -1291,9 +1352,11 @@ fun SplitSettlementDialog(
     item: ExpenseWithCategory,
     currencySymbol: String,
     onDismiss: () -> Unit,
-    onTogglePaid: (splitId: String, isPaid: Boolean) -> Unit,
+    onTogglePaid: (splitId: String, isPaid: Boolean, repaymentMethod: PaymentMethod) -> Unit,
     onEditExpense: () -> Unit
 ) {
+    var receiveMedium by remember { mutableStateOf(PaymentMethod.UPI) }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -1373,7 +1436,38 @@ fun SplitSettlementDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Receive Medium Selector (UPI / Cash)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Receive repayment via:",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(PaymentMethod.UPI, PaymentMethod.CASH).forEach { method ->
+                            FilterChip(
+                                selected = receiveMedium == method,
+                                onClick = { receiveMedium = method },
+                                label = { Text(method.displayName, style = MaterialTheme.typography.labelSmall) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (method == PaymentMethod.CASH) Icons.Default.Money else Icons.Default.QrCode,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Friends' Shares (Check off who gave you money):",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
@@ -1394,7 +1488,7 @@ fun SplitSettlementDialog(
                                 Checkbox(
                                     checked = split.isPaid,
                                     onCheckedChange = { checked ->
-                                        onTogglePaid(split.id, checked)
+                                        onTogglePaid(split.id, checked, receiveMedium)
                                     },
                                     colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
                                     modifier = Modifier.testTag("checkbox_paid_${split.id}")
@@ -1408,7 +1502,7 @@ fun SplitSettlementDialog(
                                         color = if (split.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = if (split.isPaid) "Paid back" else "Unpaid",
+                                        text = if (split.isPaid) "Paid back (${split.repaymentMethod ?: "UPI"})" else "Unpaid",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (split.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                                     )
@@ -1461,12 +1555,13 @@ fun SettlementSummaryDialog(
     friends: List<FriendEntity>,
     currencySymbol: String,
     onDismiss: () -> Unit,
-    onTogglePaid: (splitId: String, isPaid: Boolean) -> Unit,
+    onTogglePaid: (splitId: String, isPaid: Boolean, repaymentMethod: PaymentMethod) -> Unit,
     onAddFriend: (String) -> Unit,
     onRemoveFriend: (FriendEntity) -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var newFriendName by remember { mutableStateOf("") }
+    var receiveMedium by remember { mutableStateOf(PaymentMethod.UPI) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1575,7 +1670,37 @@ fun SettlementSummaryDialog(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Receive repayment via:",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(PaymentMethod.UPI, PaymentMethod.CASH).forEach { method ->
+                                    FilterChip(
+                                        selected = receiveMedium == method,
+                                        onClick = { receiveMedium = method },
+                                        label = { Text(method.displayName, style = MaterialTheme.typography.labelSmall) },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (method == PaymentMethod.CASH) Icons.Default.Money else Icons.Default.QrCode,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "Breakdown by Person:",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
@@ -1605,7 +1730,7 @@ fun SettlementSummaryDialog(
                                 }
                             }
                         } else {
-                            LazyColumn(modifier = Modifier.height(240.dp)) {
+                            LazyColumn(modifier = Modifier.height(210.dp)) {
                                 items(items = overview.peopleSummaries, key = { it.personName }) { person ->
                                     Card(
                                         shape = RoundedCornerShape(12.dp),
@@ -1652,12 +1777,12 @@ fun SettlementSummaryDialog(
                                                         Checkbox(
                                                             checked = sp.isPaid,
                                                             onCheckedChange = { checked ->
-                                                                onTogglePaid(sp.id, checked)
+                                                                onTogglePaid(sp.id, checked, receiveMedium)
                                                             },
                                                             colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                                                         )
                                                         Text(
-                                                            text = if (sp.isPaid) "Settled" else "Pending",
+                                                            text = if (sp.isPaid) "Settled (${sp.repaymentMethod ?: "UPI"})" else "Pending",
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = if (sp.isPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                                         )

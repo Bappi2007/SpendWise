@@ -200,7 +200,13 @@ class ExpenseViewModel(
         initialValue = SettlementOverview(0.0, 0, emptyList())
     )
 
-    fun addFund(title: String, amountText: String, source: String, notes: String? = null) {
+    fun addFund(
+        title: String,
+        amountText: String,
+        source: String,
+        notes: String? = null,
+        paymentMethod: PaymentMethod = PaymentMethod.UPI
+    ) {
         val amount = amountText.toDoubleOrNull()
         if (amount == null || amount <= 0) {
             emitSnackbar("Please enter a valid amount")
@@ -208,8 +214,8 @@ class ExpenseViewModel(
         }
         val displayTitle = if (title.isBlank()) source else title
         viewModelScope.launch {
-            repository.insertFund(displayTitle, amount, source, notes = notes)
-            emitSnackbar("Added $amount to funds ($source)")
+            repository.insertFund(displayTitle, amount, source, notes = notes, paymentMethod = paymentMethod.name)
+            emitSnackbar("Added $amount to ${paymentMethod.name} funds ($source)")
         }
     }
 
@@ -382,23 +388,28 @@ class ExpenseViewModel(
         return true
     }
 
-    fun toggleSplitPaidStatus(splitId: String, isPaid: Boolean) {
+    fun toggleSplitPaidStatus(
+        splitId: String,
+        isPaid: Boolean,
+        repaymentMethod: PaymentMethod = PaymentMethod.UPI
+    ) {
         viewModelScope.launch {
-            val updatedSplit = repository.setSplitPaidStatus(splitId, isPaid)
+            val updatedSplit = repository.setSplitPaidStatus(splitId, isPaid, repaymentMethod.name)
             if (updatedSplit != null) {
                 if (isPaid) {
                     val amountFormatted = String.format(Locale.getDefault(), "%.0f", updatedSplit.allocatedAmount)
+                    val methodLabel = updatedSplit.repaymentMethod ?: repaymentMethod.name
                     _eventFlow.emit(
                         UiEvent.ShowSnackbar(
-                            message = "Settled $amountFormatted from ${updatedSplit.personName}. Added back to available funds!",
+                            message = "Received $amountFormatted from ${updatedSplit.personName} via $methodLabel. Restored to $methodLabel balance!",
                             actionLabel = "UNDO",
                             onAction = {
-                                toggleSplitPaidStatus(splitId, false)
+                                toggleSplitPaidStatus(splitId, false, repaymentMethod)
                             }
                         )
                     )
                 } else {
-                    emitSnackbar("Marked debt as pending. Fund balance updated.")
+                    emitSnackbar("Marked debt as pending. Balance updated.")
                 }
             } else {
                 emitSnackbar(if (isPaid) "Marked share as paid" else "Marked share as unpaid")
@@ -426,7 +437,7 @@ class ExpenseViewModel(
         viewModelScope.launch {
             repository.lendMoneyToFriend(trimmed, amount, paymentMethod, notes, timestamp)
             val formatted = String.format(Locale.getDefault(), "%.0f", amount)
-            emitSnackbar("Recorded $formatted lent to $trimmed. Deducted from funds & tracked in Who Owes Me.")
+            emitSnackbar("Recorded $formatted lent to $trimmed via ${paymentMethod.name}. Deducted from funds & tracked in Who Owes Me.")
         }
         return true
     }
@@ -435,7 +446,8 @@ class ExpenseViewModel(
         friendName: String,
         amountText: String,
         notes: String?,
-        timestamp: Long = System.currentTimeMillis()
+        timestamp: Long = System.currentTimeMillis(),
+        paymentMethod: PaymentMethod = PaymentMethod.UPI
     ): Boolean {
         val amount = amountText.toDoubleOrNull()
         if (amount == null || amount <= 0.0) {
@@ -448,9 +460,9 @@ class ExpenseViewModel(
             return false
         }
         viewModelScope.launch {
-            repository.borrowMoneyFromFriend(trimmed, amount, notes, timestamp)
+            repository.borrowMoneyFromFriend(trimmed, amount, notes, timestamp, paymentMethod)
             val formatted = String.format(Locale.getDefault(), "%.0f", amount)
-            emitSnackbar("Added $formatted borrowed from $trimmed to available funds")
+            emitSnackbar("Added $formatted borrowed from $trimmed (${paymentMethod.name}) to available funds")
         }
         return true
     }
@@ -583,15 +595,17 @@ class ExpenseViewModel(
                 val iDay = itemCal.get(Calendar.DAY_OF_YEAR)
 
                 if (iYear == currentYear && iMonth == currentMonth) {
-                    monthTotal += item.expense.amount
+                    val settledSplits = item.splits.filter { it.isPaid }.sumOf { it.allocatedAmount }
+                    val netAmount = (item.expense.amount - settledSplits).coerceAtLeast(0.0)
+                    monthTotal += netAmount
                     if (iDay == currentDay) {
-                        todayTotal += item.expense.amount
+                        todayTotal += netAmount
                     }
                 }
             }
 
-            val totalFundsAdded = funds.sumOf { it.amount }
-            val hasCustomFunds = funds.isNotEmpty()
+            val totalFundsAdded = funds.filter { !it.id.startsWith("repay_split_") }.sumOf { it.amount }
+            val hasCustomFunds = funds.any { !it.id.startsWith("repay_split_") }
 
             return if (hasCustomFunds) {
                 val availableBalance = totalFundsAdded - monthTotal

@@ -53,6 +53,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Money
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,7 +94,7 @@ fun AnalysisScreen(
             )
         }
 
-        if (summary == null || summary.totalSpent == 0.0) {
+        if (summary == null || (summary.totalSpent == 0.0 && summary.totalIncome == 0.0)) {
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -112,13 +115,13 @@ fun AnalysisScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No expenses in ${summary?.monthDisplayName ?: "this month"}",
+                            text = "No transactions in ${summary?.monthDisplayName ?: "this month"}",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Log transactions or navigate to another month using the arrows above",
+                            text = "Log expenses, add funds (Cash/UPI), or navigate to another month using the arrows above",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -140,6 +143,14 @@ fun AnalysisScreen(
                     summary = summary,
                     currencySymbol = currencySymbol,
                     onAdjustBudget = { isBudgetSheetVisible = true }
+                )
+            }
+
+            // Separate Cash & UPI Remaining Balance Breakdown Card
+            item {
+                CashAndUpiBalanceCard(
+                    summary = summary,
+                    currencySymbol = currencySymbol
                 )
             }
 
@@ -276,8 +287,8 @@ fun AnalysisScreen(
             categoryBudgets = userPrefs.categoryBudgets,
             funds = allFunds,
             isMonthlyLimitEnabled = userPrefs.isMonthlyLimitEnabled,
-            onAddFund = { title, amountText, source, notes ->
-                viewModel.addFund(title, amountText, source, notes)
+            onAddFund = { title, amountText, source, notes, paymentMethod ->
+                viewModel.addFund(title, amountText, source, notes, paymentMethod)
             },
             onDeleteFund = { fund ->
                 viewModel.deleteFund(fund)
@@ -603,11 +614,163 @@ fun MonthlyBudgetCard(
                     text = if (isLimitEnabled) {
                         "Budget: $currencySymbol${String.format(Locale.US, "%,.0f", summary.monthlyBudget)}"
                     } else {
-                        "Total Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.monthlyBudget)}"
+                        "Total Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.totalIncome)}"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun CashAndUpiBalanceCard(
+    summary: MonthSummary,
+    currencySymbol: String
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("cash_upi_balance_card")
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AccountBalanceWallet,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Remaining Money by Medium",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Text(
+                    text = "Income: $currencySymbol${String.format(Locale.US, "%,.0f", summary.totalIncome)}",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Cash Remaining Column
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("cash_remaining_box")
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Money,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Cash Remaining",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "$currencySymbol${String.format(Locale.US, "%,.2f", summary.cashRemaining)}",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = if (summary.cashRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Added: $currencySymbol${String.format(Locale.US, "%,.0f", summary.cashIncome)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Net Spent: $currencySymbol${String.format(Locale.US, "%,.0f", summary.cashSpent)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // UPI Remaining Column
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("upi_remaining_box")
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.QrCode,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "UPI Remaining",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "$currencySymbol${String.format(Locale.US, "%,.2f", summary.upiRemaining)}",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = if (summary.upiRemaining < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Added: $currencySymbol${String.format(Locale.US, "%,.0f", summary.upiIncome)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Net Spent: $currencySymbol${String.format(Locale.US, "%,.0f", summary.upiSpent)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (summary.settledRepaymentsTotal > 0.0) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "✓ Includes $currencySymbol${String.format(Locale.US, "%,.0f", summary.settledRepaymentsTotal)} in split/lent repayments restored to your Cash/UPI balance (excluded from Total Income).",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
             }
         }
     }
