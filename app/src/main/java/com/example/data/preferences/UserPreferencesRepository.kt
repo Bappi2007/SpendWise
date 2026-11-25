@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -25,7 +26,8 @@ data class UserPreferences(
     val categoryBudgets: Map<String, Double> = emptyMap(),
     val monthBudgets: Map<String, Double> = emptyMap(),
     val isMonthlyLimitEnabled: Boolean = false,
-    val isDefaultSamplePurged: Boolean = false
+    val isDefaultSamplePurged: Boolean = false,
+    val startupMigrationVersion: Int = 0
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -40,6 +42,7 @@ class UserPreferencesRepository(private val context: Context) {
         val MONTH_BUDGETS_JSON = stringPreferencesKey("month_budgets_json")
         val IS_MONTHLY_LIMIT_ENABLED = booleanPreferencesKey("is_monthly_limit_enabled")
         val IS_DEFAULT_SAMPLE_PURGED = booleanPreferencesKey("is_default_sample_purged")
+        val STARTUP_MIGRATION_VERSION = intPreferencesKey("startup_migration_version")
     }
 
     @Volatile
@@ -61,7 +64,8 @@ class UserPreferencesRepository(private val context: Context) {
             categoryBudgets = catMap,
             monthBudgets = monthMap,
             isMonthlyLimitEnabled = preferences[PreferencesKeys.IS_MONTHLY_LIMIT_ENABLED] ?: false,
-            isDefaultSamplePurged = preferences[PreferencesKeys.IS_DEFAULT_SAMPLE_PURGED] ?: false
+            isDefaultSamplePurged = preferences[PreferencesKeys.IS_DEFAULT_SAMPLE_PURGED] ?: false,
+            startupMigrationVersion = preferences[PreferencesKeys.STARTUP_MIGRATION_VERSION] ?: 0
         )
     }
 
@@ -150,11 +154,28 @@ class UserPreferencesRepository(private val context: Context) {
         cachedPreferences = mapPreferences(updated)
     }
 
+    suspend fun setStartupMigrationVersion(version: Int) {
+        val updated = context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.STARTUP_MIGRATION_VERSION] = version
+        }
+        cachedPreferences = mapPreferences(updated)
+    }
+
+    suspend fun markStartupMigrationCompleted(version: Int) {
+        val updated = context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.STARTUP_MIGRATION_VERSION] = version
+            preferences[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] = true
+            preferences[PreferencesKeys.IS_DEFAULT_SAMPLE_PURGED] = true
+        }
+        cachedPreferences = mapPreferences(updated)
+    }
+
     suspend fun clearSettings() {
         val updated = context.dataStore.edit {
             it.clear()
             it[PreferencesKeys.IS_SAMPLE_DATA_SEEDED] = true
             it[PreferencesKeys.IS_DEFAULT_SAMPLE_PURGED] = true
+            it[PreferencesKeys.STARTUP_MIGRATION_VERSION] = com.example.data.seeder.SampleDataSeeder.CURRENT_STARTUP_MIGRATION_VERSION
         }
         cachedPreferences = mapPreferences(updated)
     }

@@ -1,17 +1,25 @@
 package com.example.data.seeder
 
+import androidx.room.withTransaction
 import com.example.data.dao.CategoryDao
 import com.example.data.dao.ExpenseDao
 import com.example.data.dao.ExpenseSplitDao
 import com.example.data.dao.FriendDao
 import com.example.data.dao.FundDao
+import com.example.data.database.SpendWiseDatabase
 import com.example.data.model.CategoryEntity
 import com.example.data.preferences.UserPreferencesRepository
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 object SampleDataSeeder {
 
+    const val CURRENT_STARTUP_MIGRATION_VERSION = 1
+
     val DEFAULT_CATEGORY_OTHER_ID = "cat_default_other"
     val CATEGORY_LENT_ID = "cat_default_money_lent"
+
+    private val initializationMutex = Mutex()
 
     fun getDefaultCategories(): List<CategoryEntity> {
         return listOf(
@@ -99,8 +107,12 @@ object SampleDataSeeder {
     }
 
     /**
-     * Ensures default categories exist and clears any pre-populated/default sample transactions
-     * so the app starts completely empty by default.
+     * Ensures required default categories exist on a fresh install and executes any pending
+     * startup migration safely without ever deleting or overwriting existing user data or
+     * resetting user preferences.
+     *
+     * Guarded by [initializationMutex] so concurrent startup calls cannot execute migration
+     * logic multiple times, and wrapped in a Room transaction when [database] is provided.
      */
     suspend fun seedInitialDataIfNeeded(
         categoryDao: CategoryDao,
@@ -108,24 +120,40 @@ object SampleDataSeeder {
         preferencesRepository: UserPreferencesRepository,
         expenseSplitDao: ExpenseSplitDao? = null,
         friendDao: FriendDao? = null,
-        fundDao: FundDao? = null
-    ) {
-        val existingCategoriesCount = categoryDao.getCount()
-        if (existingCategoriesCount == 0) {
-            categoryDao.insertCategories(getDefaultCategories())
+        fundDao: FundDao? = null,
+        database: SpendWiseDatabase? = null,
+        migrationStep: (suspend () -> Unit)? = null
+    ) = initializationMutex.withLock {
+        val prefs = preferencesRepository.getPreferencesSync()
+
+        val runDbInitializationAndMigration: suspend () -> Unit = {
+            if (categoryDao.getCount() == 0) {
+                categoryDao.insertCategories(getDefaultCategories())
+            }
+
+            if (prefs.startupMigrationVersion < CURRENT_STARTUP_MIGRATION_VERSION) {
+                // Versioned legacy sample-cleanup migration (v1):
+                // Older versions could contain user records without a schema flag distinguishing
+                // sample rows from real user records. Preserve all existing expenses, splits,
+                // funds, friends, and preferences intact.
+                migrationStep?.invoke()
+            }
         }
 
-        val prefs = preferencesRepository.getPreferencesSync()
-        if (!prefs.isDefaultSamplePurged) {
-            expenseSplitDao?.deleteAllSplits()
-            expenseDao.deleteAllExpenses()
-            fundDao?.deleteAllFunds()
-            friendDao?.deleteAllFriends()
-            preferencesRepository.setMonthlyBudget(0.0)
-            preferencesRepository.setDefaultSamplePurged(true)
+        if (database != null) {
+            database.withTransaction {
+                runDbInitializationAndMigration()
+            }
+        } else {
+            runDbInitializationAndMigration()
         }
-        if (!prefs.isSampleDataSeeded) {
-            preferencesRepository.setSampleDataSeeded(true)
+
+        // Mark migration completed ONLY after database initialization/migration succeeds.
+        if (prefs.startupMigrationVersion < CURRENT_STARTUP_MIGRATION_VERSION ||
+            !prefs.isSampleDataSeeded ||
+            !prefs.isDefaultSamplePurged
+        ) {
+            preferencesRepository.markStartupMigrationCompleted(CURRENT_STARTUP_MIGRATION_VERSION)
         }
     }
 
@@ -134,5 +162,7 @@ object SampleDataSeeder {
         expenseSplitDao: ExpenseSplitDao? = null
     ) {
         // Default sample expenses disabled — app starts clean with zero transactions by default.
+        // Never insert sample data when user expenses already exist.
+        if (expenseDao.getExpensesCount() > 0) return
     }
 }

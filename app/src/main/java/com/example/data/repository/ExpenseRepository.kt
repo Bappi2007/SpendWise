@@ -1,10 +1,12 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.data.dao.CategoryDao
 import com.example.data.dao.ExpenseDao
 import com.example.data.dao.ExpenseSplitDao
 import com.example.data.dao.FriendDao
 import com.example.data.dao.FundDao
+import com.example.data.database.SpendWiseDatabase
 import com.example.data.model.CategoryEntity
 import com.example.data.model.CategorySpending
 import com.example.data.model.DailySpending
@@ -31,8 +33,17 @@ class ExpenseRepository(
     private val preferencesRepository: UserPreferencesRepository,
     private val expenseSplitDao: ExpenseSplitDao? = null,
     private val friendDao: FriendDao? = null,
-    private val fundDao: FundDao? = null
+    private val fundDao: FundDao? = null,
+    private val database: SpendWiseDatabase? = null
 ) {
+
+    private suspend fun <T> runInTransaction(block: suspend () -> T): T {
+        return if (database != null) {
+            database.withTransaction { block() }
+        } else {
+            block()
+        }
+    }
 
     val allExpensesWithCategory: Flow<List<ExpenseWithCategory>> =
         expenseDao.getAllExpensesWithCategory()
@@ -88,7 +99,7 @@ class ExpenseRepository(
     suspend fun updateCategory(category: CategoryEntity) =
         categoryDao.updateCategory(category)
 
-    suspend fun saveExpenseWithSplits(expense: ExpenseEntity, splits: List<ExpenseSplitEntity>) {
+    suspend fun saveExpenseWithSplits(expense: ExpenseEntity, splits: List<ExpenseSplitEntity>) = runInTransaction {
         expenseDao.insertExpense(expense)
         if (expenseSplitDao != null) {
             expenseSplitDao.deleteSplitsForExpense(expense.id)
@@ -129,7 +140,7 @@ class ExpenseRepository(
         paymentMethod: PaymentMethod,
         notes: String?,
         timestamp: Long = System.currentTimeMillis()
-    ): Pair<ExpenseEntity, ExpenseSplitEntity> {
+    ): Pair<ExpenseEntity, ExpenseSplitEntity> = runInTransaction {
         val trimmedName = friendName.trim()
         if (friendDao != null) {
             val existing = friendDao.getFriendByName(trimmedName)
@@ -173,7 +184,7 @@ class ExpenseRepository(
         )
 
         saveExpenseWithSplits(expense, listOf(split))
-        return Pair(expense, split)
+        Pair(expense, split)
     }
 
     suspend fun borrowMoneyFromFriend(
@@ -182,7 +193,7 @@ class ExpenseRepository(
         notes: String?,
         timestamp: Long = System.currentTimeMillis(),
         paymentMethod: PaymentMethod = PaymentMethod.UPI
-    ): FundEntity {
+    ): FundEntity = runInTransaction {
         val trimmedName = friendName.trim()
         if (friendDao != null) {
             val existing = friendDao.getFriendByName(trimmedName)
@@ -199,7 +210,7 @@ class ExpenseRepository(
             paymentMethod = paymentMethod.name
         )
         fundDao?.insertFund(fund)
-        return fund
+        fund
     }
 
     suspend fun getSplitsForExpense(expenseId: String): List<ExpenseSplitEntity> =
@@ -208,7 +219,7 @@ class ExpenseRepository(
     /**
      * Requirement 3: Deleting a category moves its expenses to "Other"
      */
-    suspend fun deleteCategory(category: CategoryEntity) {
+    suspend fun deleteCategory(category: CategoryEntity) = runInTransaction {
         val otherCategory = categoryDao.getCategoryById(SampleDataSeeder.DEFAULT_CATEGORY_OTHER_ID)
             ?: categoryDao.getCategoryByName("Other")
             ?: run {
@@ -520,16 +531,20 @@ class ExpenseRepository(
     }
 
     suspend fun reSeedSampleData() {
-        expenseSplitDao?.deleteAllSplits()
-        expenseDao.deleteAllExpenses()
-        SampleDataSeeder.seedSampleExpenses(expenseDao, expenseSplitDao)
+        runInTransaction {
+            if (expenseDao.getExpensesCount() == 0) {
+                SampleDataSeeder.seedSampleExpenses(expenseDao, expenseSplitDao)
+            }
+        }
         preferencesRepository.setSampleDataSeeded(true)
     }
 
     suspend fun clearAllData() {
-        expenseSplitDao?.deleteAllSplits()
-        expenseDao.deleteAllExpenses()
-        fundDao?.deleteAllFunds()
+        runInTransaction {
+            expenseSplitDao?.deleteAllSplits()
+            expenseDao.deleteAllExpenses()
+            fundDao?.deleteAllFunds()
+        }
         preferencesRepository.setMonthlyBudget(0.0)
         preferencesRepository.setSampleDataSeeded(true)
     }

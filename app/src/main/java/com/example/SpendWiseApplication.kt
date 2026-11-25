@@ -1,12 +1,14 @@
 package com.example
 
 import android.app.Application
+import android.util.Log
 import com.example.data.backup.BackupRestoreManager
 import com.example.data.database.SpendWiseDatabase
 import com.example.data.export.ReportExporter
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.repository.ExpenseRepository
 import com.example.data.seeder.SampleDataSeeder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,7 +38,8 @@ class DefaultAppContainer(private val application: Application) : AppContainer {
             preferencesRepository = preferencesRepository,
             expenseSplitDao = database.expenseSplitDao(),
             friendDao = database.friendDao(),
-            fundDao = database.fundDao()
+            fundDao = database.fundDao(),
+            database = database
         )
     }
 
@@ -70,16 +73,23 @@ class SpendWiseApplication : Application() {
         super.onCreate()
         container = DefaultAppContainer(this)
 
-        // Ensure default categories exist and clear any default sample data
+        // Ensure default categories exist and run safe, idempotent startup initialization
         applicationScope.launch {
-            SampleDataSeeder.seedInitialDataIfNeeded(
-                categoryDao = container.database.categoryDao(),
-                expenseDao = container.database.expenseDao(),
-                preferencesRepository = container.preferencesRepository,
-                expenseSplitDao = container.database.expenseSplitDao(),
-                friendDao = container.database.friendDao(),
-                fundDao = container.database.fundDao()
-            )
+            try {
+                SampleDataSeeder.seedInitialDataIfNeeded(
+                    categoryDao = container.database.categoryDao(),
+                    expenseDao = container.database.expenseDao(),
+                    preferencesRepository = container.preferencesRepository,
+                    expenseSplitDao = container.database.expenseSplitDao(),
+                    friendDao = container.database.friendDao(),
+                    fundDao = container.database.fundDao(),
+                    database = container.database
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SpendWiseApplication", "Startup initialization failed; preserving existing data", e)
+            }
         }
     }
 }
