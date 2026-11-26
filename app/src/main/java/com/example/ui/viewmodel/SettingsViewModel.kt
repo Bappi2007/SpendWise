@@ -245,7 +245,8 @@ class SettingsViewModel(
                         format = format,
                         expenses = expenses,
                         currencySymbol = userPreferences.value.currencySymbol,
-                        outputStream = stream
+                        outputStream = stream,
+                        scopeName = scope.displayName
                     )
                 }
                 _eventFlow.emit(UiEvent.ShowSnackbar("Report exported successfully"))
@@ -287,7 +288,8 @@ class SettingsViewModel(
                     format = format,
                     expenses = expenses,
                     currencySymbol = userPreferences.value.currencySymbol,
-                    outputStream = outputStream
+                    outputStream = outputStream,
+                    scopeName = scope.displayName
                 )
                 _eventFlow.emit(UiEvent.ShowSnackbar("Report exported successfully"))
             } catch (e: Exception) {

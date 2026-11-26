@@ -19,7 +19,8 @@ enum class ExportScope(val displayName: String) {
 
 enum class ExportFormat(val extension: String, val mimeType: String, val displayName: String) {
     CSV("csv", "text/csv", "CSV Spreadsheet (.csv)"),
-    EXCEL("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Excel Workbook (.xlsx)")
+    EXCEL("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Excel Workbook (.xlsx)"),
+    PDF("pdf", "application/pdf", "PDF Document (.pdf)")
 }
 
 class ReportExporter(
@@ -88,7 +89,8 @@ class ReportExporter(
         format: ExportFormat,
         expenses: List<ExpenseWithCategory>,
         currencySymbol: String,
-        outputStream: OutputStream
+        outputStream: OutputStream,
+        scopeName: String = "Expense Report"
     ) {
         when (format) {
             ExportFormat.CSV -> {
@@ -100,6 +102,9 @@ class ReportExporter(
             }
             ExportFormat.EXCEL -> {
                 XlsxGenerator.generateWorkbook(expenses, currencySymbol, outputStream)
+            }
+            ExportFormat.PDF -> {
+                PdfGenerator.generateReport(expenses, currencySymbol, scopeName, outputStream)
             }
         }
     }
@@ -121,7 +126,7 @@ class ReportExporter(
         val file = File(reportsDir, fileName)
 
         file.outputStream().use { os ->
-            exportToStream(format, expenses, currencySymbol, os)
+            exportToStream(format, expenses, currencySymbol, os, scopeName)
         }
 
         val authority = "${context.packageName}.fileprovider"

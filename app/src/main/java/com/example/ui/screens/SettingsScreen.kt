@@ -384,12 +384,12 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "CSV & Excel (.xlsx) Exporter",
+                                text = "CSV, Excel (.xlsx) & PDF Exporter",
                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Export multi-sheet Excel workbooks or UTF-8 BOM CSV files",
+                                text = "Export PDF reports, multi-sheet Excel workbooks, or UTF-8 BOM CSV files",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -866,8 +866,11 @@ fun ExportReportDialog(
     val dateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.getDefault()) }
 
     // SAF Document Launcher for Report
+    val createReportContract = remember(selectedFormat) {
+        ActivityResultContracts.CreateDocument(selectedFormat.mimeType)
+    }
     val createReportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument(selectedFormat.mimeType)
+        contract = createReportContract
     ) { uri: Uri? ->
         uri?.let {
             viewModel.exportReportToUri(
